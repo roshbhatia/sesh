@@ -23,16 +23,26 @@ Perfect for when you need to work across multiple repos but don't want to naviga
 ### Install sesh
 
 ```bash
-# Using task
+# Using task (recommended - installs binary + zsh completion)
 task install
 
 # Or manually
 cp sesh ~/bin/sesh
 chmod +x ~/bin/sesh
 
+# Install zsh completion (optional)
+mkdir -p ~/.local/share/zsh/site-functions
+cp _sesh ~/.local/share/zsh/site-functions/_sesh
+
 # Make sure ~/bin is in your PATH
 export PATH="$HOME/bin:$PATH"
+
+# For completions, ensure your .zshrc has (if not already present):
+fpath=(~/.local/share/zsh/site-functions $fpath)
+autoload -Uz compinit && compinit
 ```
+
+After installation, restart your shell or run `exec zsh` for completions to take effect.
 
 ## Usage
 

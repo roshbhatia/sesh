@@ -2,29 +2,43 @@ version: '3'
 
 vars:
   INSTALL_DIR: '{{.HOME}}/bin'
+  COMPLETION_DIR: '{{.HOME}}/.local/share/zsh/site-functions'
   SCRIPT_NAME: sesh
 
 tasks:
   install:
-    desc: Install sesh to ~/bin
+    desc: Install sesh to ~/bin and zsh completion
     cmds:
       - mkdir -p {{.INSTALL_DIR}}
+      - mkdir -p {{.COMPLETION_DIR}}
       - cp sesh {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}
       - chmod +x {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}
+      - cp _sesh {{.COMPLETION_DIR}}/_sesh
       - echo "✓ Installed sesh to {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}"
+      - echo "✓ Installed zsh completion to {{.COMPLETION_DIR}}/_sesh"
       - echo ""
       - echo "Make sure {{.INSTALL_DIR}} is in your PATH:"
       - echo '  export PATH="$HOME/bin:$PATH"'
+      - echo ""
+      - echo "For completions to work, add to your .zshrc (if not already present):"
+      - echo '  fpath=(~/.local/share/zsh/site-functions $fpath)'
+      - echo '  autoload -Uz compinit && compinit'
+      - echo ""
+      - echo "Then restart your shell or run: exec zsh"
     sources:
       - sesh
+      - _sesh
     generates:
       - '{{.INSTALL_DIR}}/{{.SCRIPT_NAME}}'
+      - '{{.COMPLETION_DIR}}/_sesh'
 
   uninstall:
-    desc: Uninstall sesh from ~/bin
+    desc: Uninstall sesh from ~/bin and remove zsh completion
     cmds:
       - rm -f {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}
+      - rm -f {{.COMPLETION_DIR}}/_sesh
       - echo "✓ Uninstalled sesh"
+      - echo "✓ Removed zsh completion"
 
   test:
     desc: Run basic tests on sesh
