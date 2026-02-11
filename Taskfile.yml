@@ -59,6 +59,7 @@ tasks:
       - |
         echo "Checking dependencies..."
         command -v zoxide >/dev/null 2>&1 && echo "✓ zoxide installed" || echo "✗ zoxide not found"
+        command -v fzf >/dev/null 2>&1 && echo "✓ fzf installed" || echo "✗ fzf not found"
         command -v gum >/dev/null 2>&1 && echo "✓ gum installed" || echo "✗ gum not found"
         command -v direnv >/dev/null 2>&1 && echo "✓ direnv installed (optional)" || echo "○ direnv not found (optional)"
 

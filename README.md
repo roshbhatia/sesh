@@ -17,6 +17,7 @@ Perfect for when you need to work across multiple repos but don't want to naviga
 ### Prerequisites
 
 - [zoxide](https://github.com/ajeetdsouza/zoxide) - For intelligent directory tracking
+- [fzf](https://github.com/junegunn/fzf) - For fuzzy finding and multi-select
 - [gum](https://github.com/charmbracelet/gum) - For beautiful terminal UI
 - [direnv](https://direnv.net/) - (Optional) For automatic environment loading
 
