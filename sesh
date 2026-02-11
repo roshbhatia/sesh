@@ -104,11 +104,38 @@ create_session() {
 
 pkgs.mkShell {
   buildInputs = with pkgs; [
-    # Add your development tools here
+    # Uncomment the stacks you need:
+    
+    # Go
+    # go gopls golangci-lint air delve
+    
+    # Node.js
+    # nodejs_20 nodePackages.npm nodePackages.pnpm yarn
+    
+    # Python
+    # python311 python311Packages.pip poetry ruff
+    
+    # Rust
+    # cargo rustc rustfmt clippy
+    
+    # General tools
+    # git jq yq ripgrep fd bat
   ];
   
   shellHook = ''
     echo "Session: $(basename $PWD)"
+    
+    # Uncomment for stack-specific setup:
+    
+    # Go
+    # export GOPATH=$PWD/.go
+    # export PATH=$GOPATH/bin:$PATH
+    
+    # Node.js
+    # export NODE_ENV=development
+    
+    # Python
+    # export PYTHONPATH=$PWD
   '';
 }
 EOF
@@ -282,14 +309,51 @@ delete_session() {
         error "Session '${name}' does not exist"
     fi
     
+    local session_path
+    session_path=$(get_session_path "$name")
+    
+    # Check if this is a worktree session
+    local is_worktree=false
+    if [[ -f "$session_path/.sesh-worktree" ]]; then
+        is_worktree=true
+        info "This is a worktree session"
+    fi
+    
     # Confirm deletion
     gum confirm "Delete session '${name}'? This cannot be undone." || {
         info "Deletion cancelled"
         exit 0
     }
     
-    local session_path
-    session_path=$(get_session_path "$name")
+    # If worktree session, clean up worktrees first
+    if [[ "$is_worktree" == "true" ]]; then
+        info "Cleaning up git worktrees..."
+        local repos
+        repos=$(get_repo_links "$session_path")
+        
+        while IFS= read -r link_path; do
+            local worktree_path
+            worktree_path=$(readlink "$link_path")
+            
+            if [[ -d "$worktree_path" ]] && is_git_repo "$worktree_path"; then
+                # Find the main repo by asking git
+                local main_repo
+                main_repo=$(git -C "$worktree_path" rev-parse --git-common-dir 2>/dev/null | sed 's|/.git/worktrees/.*||')
+                
+                if [[ -n "$main_repo" ]] && [[ -d "$main_repo" ]]; then
+                    # Remove the worktree
+                    if git -C "$main_repo" worktree remove "$worktree_path" --force 2>/dev/null; then
+                        success "  Removed worktree: $(basename "$worktree_path")"
+                    else
+                        # Try removing the directory if git worktree remove failed
+                        rm -rf "$worktree_path"
+                        git -C "$main_repo" worktree prune 2>/dev/null || true
+                    fi
+                fi
+            fi
+        done <<< "$repos"
+    fi
+    
     rm -rf "$session_path"
     success "Deleted session '${name}'"
 }
@@ -316,6 +380,624 @@ rename_session() {
     mv "$old_path" "$new_path"
     success "Renamed session '${old_name}' to '${new_name}'"
     echo "$new_path"
+}
+
+update_description() {
+    local name="$1"
+    local description="${2:-}"
+    
+    if ! session_exists "$name"; then
+        error "Session '${name}' does not exist"
+    fi
+    
+    local session_path
+    session_path=$(get_session_path "$name")
+    
+    # If no description provided, show current description
+    if [[ -z "$description" ]]; then
+        if [[ -f "$session_path/.sesh-desc" ]]; then
+            cat "$session_path/.sesh-desc"
+        else
+            info "No description set for session '${name}'"
+        fi
+        return
+    fi
+    
+    # Update description
+    echo "$description" > "$session_path/.sesh-desc"
+    success "Updated description for session '${name}'"
+}
+
+init_shell() {
+    local shell_type="${1:-zsh}"
+    
+    if [[ "$shell_type" != "zsh" ]]; then
+        error "Only zsh is currently supported"
+    fi
+    
+    cat <<'INIT_EOF'
+# sesh shell integration
+
+# s - Quick navigate to session
+s() {
+    local session_path
+    session_path=$(sesh "$1" 2>/dev/null)
+    if [[ -n "$session_path" && -d "$session_path" ]]; then
+        cd "$session_path" || return 1
+    else
+        echo "Session '$1' not found" >&2
+        return 1
+    fi
+}
+
+# si - Interactive session selector (cd to selected)
+si() {
+    if [[ ! -d "${XDG_STATE_HOME:-$HOME/.local/state}/sesh" ]] || \
+       [[ -z "$(ls -A "${XDG_STATE_HOME:-$HOME/.local/state}/sesh" 2>/dev/null)" ]]; then
+        echo "No sessions found. Create one with: sesh new <name>" >&2
+        return 1
+    fi
+    
+    local sessions=()
+    local sesh_root="${XDG_STATE_HOME:-$HOME/.local/state}/sesh"
+    
+    for session_dir in "$sesh_root"/*; do
+        if [[ -d "$session_dir" ]]; then
+            sessions+=("$(basename "$session_dir")")
+        fi
+    done
+    
+    local choice
+    choice=$(printf '%s\n' "${sessions[@]}" | fzf \
+        --height=40% \
+        --border=rounded \
+        --prompt="Select session: " \
+        --preview="ls -la $sesh_root/{}" \
+        --preview-window=right:50%)
+    
+    if [[ -n "$choice" ]]; then
+        s "$choice"
+    fi
+}
+
+# Completion for s and si
+_sesh_complete_sessions() {
+    local sesh_root="${XDG_STATE_HOME:-$HOME/.local/state}/sesh"
+    if [[ -d "$sesh_root" ]]; then
+        local sessions=(${sesh_root}/*(/:t))
+        _describe 'session' sessions
+    fi
+}
+
+compdef _sesh_complete_sessions s
+compdef _sesh_complete_sessions si
+
+# Enhanced sesh completion
+_sesh_enhanced() {
+    local line state
+
+    function _sesh_sessions {
+        local sesh_root="${XDG_STATE_HOME:-$HOME/.local/state}/sesh"
+        if [[ -d "$sesh_root" ]]; then
+            local sessions=(${sesh_root}/*(/:t))
+            _describe 'session' sessions
+        fi
+    }
+
+    _arguments -C \
+        '1: :->command' \
+        '*::arg:->args'
+
+    case $state in
+        command)
+            local -a commands
+            commands=(
+                'new:Create a new session'
+                'list:List all sessions'
+                'add:Add repos to an existing session'
+                'remove:Remove repos from a session'
+                'delete:Delete a session'
+                'rename:Rename a session'
+                'describe:Show or update session description'
+                'branch:Manage git branches across repos'
+                'status:Show git status for all repos'
+                'sync:Pull updates for all repos'
+                'exec:Execute command in all repos'
+                'init:Initialize shell integration'
+                'help:Show help message'
+                'version:Show version'
+            )
+            _describe 'command' commands
+            _sesh_sessions
+            ;;
+        args)
+            case $line[1] in
+                add|remove|delete|describe|branch|status|sync|exec)
+                    _sesh_sessions
+                    ;;
+                rename)
+                    if [[ $CURRENT -eq 2 ]]; then
+                        _sesh_sessions
+                    fi
+                    ;;
+            esac
+            ;;
+    esac
+}
+
+compdef _sesh_enhanced sesh
+INIT_EOF
+}
+
+# Git integration helpers
+
+get_repo_links() {
+    local session_path="$1"
+    find "$session_path" -type l 2>/dev/null | sort
+}
+
+is_git_repo() {
+    local path="$1"
+    [[ -d "$path/.git" ]] || git -C "$path" rev-parse --git-dir >/dev/null 2>&1
+}
+
+git_status_session() {
+    local name="$1"
+    
+    if ! session_exists "$name"; then
+        error "Session '${name}' does not exist"
+    fi
+    
+    local session_path
+    session_path=$(get_session_path "$name")
+    
+    local repos
+    repos=$(get_repo_links "$session_path")
+    
+    if [[ -z "$repos" ]]; then
+        warn "No repositories found in session '${name}'"
+        return
+    fi
+    
+    info "Git status for session: ${name}"
+    echo
+    
+    local has_errors=0
+    
+    while IFS= read -r link_path; do
+        local repo_path
+        repo_path=$(readlink "$link_path")
+        local repo_name
+        repo_name=$(echo "$link_path" | sed "s|^$session_path/||")
+        
+        if [[ ! -d "$repo_path" ]]; then
+            warn "  ${repo_name}: Target does not exist"
+            has_errors=1
+            continue
+        fi
+        
+        if ! is_git_repo "$repo_path"; then
+            warn "  ${repo_name}: Not a git repository"
+            continue
+        fi
+        
+        # Get git info
+        local branch
+        branch=$(git -C "$repo_path" branch --show-current 2>/dev/null || echo "detached")
+        
+        local status_output
+        status_output=$(git -C "$repo_path" status --porcelain 2>/dev/null)
+        
+        local ahead_behind
+        ahead_behind=$(git -C "$repo_path" rev-list --left-right --count @{upstream}...HEAD 2>/dev/null || echo "")
+        
+        # Format output
+        gum style --foreground 212 "  ${repo_name}"
+        echo "    Branch: ${branch}"
+        
+        if [[ -n "$ahead_behind" ]]; then
+            local behind ahead
+            behind=$(echo "$ahead_behind" | awk '{print $1}')
+            ahead=$(echo "$ahead_behind" | awk '{print $2}')
+            if [[ "$behind" -gt 0 ]] || [[ "$ahead" -gt 0 ]]; then
+                echo "    Remote: ↓${behind} ↑${ahead}"
+            else
+                echo "    Remote: synced"
+            fi
+        else
+            echo "    Remote: no upstream"
+        fi
+        
+        if [[ -z "$status_output" ]]; then
+            gum style --foreground 42 "    Status: clean"
+        else
+            local modified
+            modified=$(echo "$status_output" | grep -c "^ M" || true)
+            local untracked
+            untracked=$(echo "$status_output" | grep -c "^??" || true)
+            local staged
+            staged=$(echo "$status_output" | grep -c "^[MADR]" || true)
+            
+            gum style --foreground 214 "    Status: ${modified} modified, ${staged} staged, ${untracked} untracked"
+        fi
+        echo
+    done <<< "$repos"
+    
+    return $has_errors
+}
+
+git_sync_session() {
+    local name="$1"
+    local fetch_only="${2:-false}"
+    
+    if ! session_exists "$name"; then
+        error "Session '${name}' does not exist"
+    fi
+    
+    local session_path
+    session_path=$(get_session_path "$name")
+    
+    local repos
+    repos=$(get_repo_links "$session_path")
+    
+    if [[ -z "$repos" ]]; then
+        warn "No repositories found in session '${name}'"
+        return
+    fi
+    
+    info "Syncing repositories in session: ${name}"
+    echo
+    
+    local failed=0
+    local succeeded=0
+    
+    while IFS= read -r link_path; do
+        local repo_path
+        repo_path=$(readlink "$link_path")
+        local repo_name
+        repo_name=$(echo "$link_path" | sed "s|^$session_path/||")
+        
+        if [[ ! -d "$repo_path" ]]; then
+            warn "  ${repo_name}: Target does not exist"
+            ((failed++))
+            continue
+        fi
+        
+        if ! is_git_repo "$repo_path"; then
+            warn "  ${repo_name}: Not a git repository"
+            ((failed++))
+            continue
+        fi
+        
+        # Check for uncommitted changes if pulling
+        if [[ "$fetch_only" == "false" ]]; then
+            local status_output
+            status_output=$(git -C "$repo_path" status --porcelain 2>/dev/null)
+            if [[ -n "$status_output" ]]; then
+                warn "  ${repo_name}: Has uncommitted changes, skipping pull"
+                ((failed++))
+                continue
+            fi
+        fi
+        
+        # Perform git operation
+        if [[ "$fetch_only" == "true" ]]; then
+            if git -C "$repo_path" fetch --all --quiet 2>/dev/null; then
+                success "  ${repo_name}: Fetched"
+                ((succeeded++))
+            else
+                warn "  ${repo_name}: Fetch failed"
+                ((failed++))
+            fi
+        else
+            if git -C "$repo_path" pull --quiet 2>/dev/null; then
+                success "  ${repo_name}: Pulled"
+                ((succeeded++))
+            else
+                warn "  ${repo_name}: Pull failed"
+                ((failed++))
+            fi
+        fi
+    done <<< "$repos"
+    
+    echo
+    info "Summary: ${succeeded} succeeded, ${failed} failed"
+    
+    return $([[ $failed -eq 0 ]] && echo 0 || echo 1)
+}
+
+git_exec_session() {
+    local name="$1"
+    shift
+    local cmd=("$@")
+    
+    if ! session_exists "$name"; then
+        error "Session '${name}' does not exist"
+    fi
+    
+    if [[ ${#cmd[@]} -eq 0 ]]; then
+        error "No command specified"
+    fi
+    
+    local session_path
+    session_path=$(get_session_path "$name")
+    
+    local repos
+    repos=$(get_repo_links "$session_path")
+    
+    if [[ -z "$repos" ]]; then
+        warn "No repositories found in session '${name}'"
+        return
+    fi
+    
+    info "Executing in session: ${name}"
+    info "Command: ${cmd[*]}"
+    echo
+    
+    local failed=0
+    local succeeded=0
+    
+    while IFS= read -r link_path; do
+        local repo_path
+        repo_path=$(readlink "$link_path")
+        local repo_name
+        repo_name=$(echo "$link_path" | sed "s|^$session_path/||")
+        
+        if [[ ! -d "$repo_path" ]]; then
+            warn "  ${repo_name}: Target does not exist"
+            ((failed++))
+            continue
+        fi
+        
+        gum style --foreground 212 "  ${repo_name}:"
+        
+        if (cd "$repo_path" && "${cmd[@]}" 2>&1 | sed 's/^/    /'); then
+            ((succeeded++))
+        else
+            ((failed++))
+        fi
+        echo
+    done <<< "$repos"
+    
+    info "Summary: ${succeeded} succeeded, ${failed} failed"
+    
+    return $([[ $failed -eq 0 ]] && echo 0 || echo 1)
+}
+
+git_branch_session() {
+    local name="$1"
+    local branch_name="${2:-}"
+    local use_worktree="${3:-false}"
+    
+    if ! session_exists "$name"; then
+        error "Session '${name}' does not exist"
+    fi
+    
+    # If no branch name, show branch status
+    if [[ -z "$branch_name" ]] || [[ "$branch_name" == "--status" ]]; then
+        git_branch_status "$name"
+        return
+    fi
+    
+    # Handle worktree creation
+    if [[ "$use_worktree" == "true" ]]; then
+        git_branch_worktree "$name" "$branch_name"
+        return
+    fi
+    
+    # Regular branch checkout/create
+    local session_path
+    session_path=$(get_session_path "$name")
+    
+    local repos
+    repos=$(get_repo_links "$session_path")
+    
+    if [[ -z "$repos" ]]; then
+        warn "No repositories found in session '${name}'"
+        return
+    fi
+    
+    info "Switching to branch '${branch_name}' in session: ${name}"
+    echo
+    
+    local failed=0
+    local succeeded=0
+    
+    while IFS= read -r link_path; do
+        local repo_path
+        repo_path=$(readlink "$link_path")
+        local repo_name
+        repo_name=$(echo "$link_path" | sed "s|^$session_path/||")
+        
+        if [[ ! -d "$repo_path" ]]; then
+            warn "  ${repo_name}: Target does not exist"
+            ((failed++))
+            continue
+        fi
+        
+        if ! is_git_repo "$repo_path"; then
+            warn "  ${repo_name}: Not a git repository"
+            ((failed++))
+            continue
+        fi
+        
+        # Check if branch exists
+        if git -C "$repo_path" rev-parse --verify "$branch_name" >/dev/null 2>&1; then
+            # Branch exists, check it out
+            if git -C "$repo_path" checkout "$branch_name" --quiet 2>/dev/null; then
+                success "  ${repo_name}: Switched to existing branch"
+                ((succeeded++))
+            else
+                warn "  ${repo_name}: Failed to checkout branch"
+                ((failed++))
+            fi
+        else
+            # Branch doesn't exist, create it
+            if git -C "$repo_path" checkout -b "$branch_name" --quiet 2>/dev/null; then
+                success "  ${repo_name}: Created and switched to new branch"
+                ((succeeded++))
+            else
+                warn "  ${repo_name}: Failed to create branch"
+                ((failed++))
+            fi
+        fi
+    done <<< "$repos"
+    
+    echo
+    info "Summary: ${succeeded} succeeded, ${failed} failed"
+    
+    return $([[ $failed -eq 0 ]] && echo 0 || echo 1)
+}
+
+git_branch_status() {
+    local name="$1"
+    
+    local session_path
+    session_path=$(get_session_path "$name")
+    
+    local repos
+    repos=$(get_repo_links "$session_path")
+    
+    if [[ -z "$repos" ]]; then
+        warn "No repositories found in session '${name}'"
+        return
+    fi
+    
+    info "Branch status for session: ${name}"
+    echo
+    
+    while IFS= read -r link_path; do
+        local repo_path
+        repo_path=$(readlink "$link_path")
+        local repo_name
+        repo_name=$(echo "$link_path" | sed "s|^$session_path/||")
+        
+        if [[ ! -d "$repo_path" ]] || ! is_git_repo "$repo_path"; then
+            continue
+        fi
+        
+        local branch
+        branch=$(git -C "$repo_path" branch --show-current 2>/dev/null || echo "detached")
+        
+        local default_branch
+        default_branch=$(git -C "$repo_path" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
+        
+        gum style --foreground 212 "  ${repo_name}"
+        echo "    Current: ${branch}"
+        echo "    Default: ${default_branch}"
+        echo
+    done <<< "$repos"
+}
+
+git_branch_worktree() {
+    local source_session="$1"
+    local branch_name="$2"
+    
+    # Generate new session name
+    local new_session="${source_session}-${branch_name}"
+    
+    # Check if new session already exists
+    if session_exists "$new_session"; then
+        error "Session '${new_session}' already exists. Choose a different branch name or delete the existing session."
+    fi
+    
+    local source_path
+    source_path=$(get_session_path "$source_session")
+    
+    local new_path
+    new_path=$(get_session_path "$new_session")
+    
+    info "Creating worktree session: ${new_session}"
+    info "Based on: ${source_session}"
+    info "Branch: ${branch_name}"
+    echo
+    
+    # Create new session directory
+    mkdir -p "$new_path"
+    
+    # Copy metadata files
+    if [[ -f "$source_path/.sesh-desc" ]]; then
+        cp "$source_path/.sesh-desc" "$new_path/.sesh-desc"
+        echo " (worktree for ${branch_name})" >> "$new_path/.sesh-desc"
+    fi
+    
+    if [[ -f "$source_path/shell.nix" ]]; then
+        cp "$source_path/shell.nix" "$new_path/shell.nix"
+    fi
+    
+    if [[ -f "$source_path/.envrc" ]]; then
+        cp "$source_path/.envrc" "$new_path/.envrc"
+    fi
+    
+    # Mark as worktree session
+    echo "$source_session" > "$new_path/.sesh-worktree"
+    
+    # Get all repos from source session
+    local repos
+    repos=$(get_repo_links "$source_path")
+    
+    if [[ -z "$repos" ]]; then
+        warn "No repositories found in source session"
+        rm -rf "$new_path"
+        return 1
+    fi
+    
+    local failed=0
+    local succeeded=0
+    
+    while IFS= read -r link_path; do
+        local repo_path
+        repo_path=$(readlink "$link_path")
+        local repo_name
+        repo_name=$(echo "$link_path" | sed "s|^$source_path/||")
+        
+        if [[ ! -d "$repo_path" ]]; then
+            warn "  ${repo_name}: Source target does not exist"
+            ((failed++))
+            continue
+        fi
+        
+        if ! is_git_repo "$repo_path"; then
+            warn "  ${repo_name}: Not a git repository"
+            ((failed++))
+            continue
+        fi
+        
+        # Create worktree in a sibling directory
+        local worktree_base
+        worktree_base=$(dirname "$repo_path")
+        local repo_basename
+        repo_basename=$(basename "$repo_path")
+        local worktree_path="${worktree_base}/${repo_basename}-wt-${branch_name}"
+        
+        # Create worktree
+        if git -C "$repo_path" worktree add "$worktree_path" -b "$branch_name" 2>/dev/null || \
+           git -C "$repo_path" worktree add "$worktree_path" "$branch_name" 2>/dev/null; then
+            # Create symlink in new session
+            local link_target="$new_path/$repo_name"
+            mkdir -p "$(dirname "$link_target")"
+            ln -s "$worktree_path" "$link_target"
+            success "  ${repo_name}: Created worktree"
+            ((succeeded++))
+        else
+            warn "  ${repo_name}: Failed to create worktree"
+            ((failed++))
+        fi
+    done <<< "$repos"
+    
+    echo
+    if [[ $succeeded -gt 0 ]]; then
+        success "Created worktree session: ${new_session}"
+        echo "$new_path"
+    else
+        error "Failed to create worktree session"
+        rm -rf "$new_path"
+        return 1
+    fi
+    
+    info "Summary: ${succeeded} succeeded, ${failed} failed"
+    
+    return $([[ $failed -eq 0 ]] && echo 0 || echo 1)
 }
 
 interactive_menu() {
@@ -406,14 +1088,41 @@ Usage:
   sesh remove <session-name>    Remove repos from session
   sesh delete <session-name>    Delete a session
   sesh rename <old> <new>       Rename a session
+  sesh describe <session> [desc] Show/update session description
+  sesh init [zsh]               Output shell integration code
+  
+Git Integration:
+  sesh branch <session> <name>  Checkout/create branch in all repos
+  sesh branch <session> <name> --worktree  Create worktree session
+  sesh branch <session> --status Show branch info for all repos
+  sesh status <session>         Show git status for all repos
+  sesh sync <session>           Pull updates for all repos
+  sesh sync <session> --fetch   Fetch only (no pull)
+  sesh exec <session> <cmd>     Execute command in all repos
   sesh help                     Show this help message
+
+Shell Integration:
+  Add to your .zshrc:
+    eval "\$(sesh init zsh)"
+  
+  This provides:
+    s <session>    - Quick navigate to session
+    si             - Interactive session selector
+    Tab completion for all sesh commands
 
 Examples:
   sesh                          # Interactive menu
   sesh new my-project           # Create new session
   cd "\$(sesh my-project)"       # Change to session directory
-  sesh add my-project           # Add more repos
-  sesh list                     # Show all sessions
+  eval "\$(sesh init zsh)"       # Shell integration
+  s my-project                  # Quick navigate (after init)
+  
+  # Git workflows
+  sesh branch platform feat-x   # Switch all repos to feat-x branch
+  sesh branch platform feat-x --worktree  # Create isolated worktree session
+  sesh status platform          # Check git status
+  sesh sync platform            # Pull all repos
+  sesh exec platform git fetch  # Run git command in all repos
 
 EOF
 }
@@ -461,6 +1170,58 @@ main() {
                 error "Usage: sesh rename <old-name> <new-name>"
             fi
             rename_session "${2}" "${3}"
+            ;;
+        "describe"|"desc")
+            if [[ $# -lt 2 ]]; then
+                error "Usage: sesh describe <session-name> [description]"
+            fi
+            update_description "${2}" "${3:-}"
+            ;;
+        "init")
+            init_shell "${2:-zsh}"
+            ;;
+        "status")
+            if [[ $# -ne 2 ]]; then
+                error "Usage: sesh status <session-name>"
+            fi
+            git_status_session "${2}"
+            ;;
+        "sync")
+            if [[ $# -lt 2 ]]; then
+                error "Usage: sesh sync <session-name> [--fetch]"
+            fi
+            local fetch_only="false"
+            if [[ "${3:-}" == "--fetch" ]]; then
+                fetch_only="true"
+            fi
+            git_sync_session "${2}" "$fetch_only"
+            ;;
+        "exec")
+            if [[ $# -lt 3 ]]; then
+                error "Usage: sesh exec <session-name> <command> [args...]"
+            fi
+            local session_name="${2}"
+            shift 2
+            git_exec_session "$session_name" "$@"
+            ;;
+        "branch")
+            if [[ $# -lt 2 ]]; then
+                error "Usage: sesh branch <session-name> [branch-name] [--worktree|--status]"
+            fi
+            local session_name="${2}"
+            local branch_name="${3:-}"
+            local use_worktree="false"
+            
+            # Check if --worktree flag is present
+            if [[ "${4:-}" == "--worktree" ]] || [[ "$branch_name" == "--worktree" ]]; then
+                use_worktree="true"
+                # If --worktree is in position 3, we need branch name in position 4
+                if [[ "$branch_name" == "--worktree" ]]; then
+                    error "Usage: sesh branch <session-name> <branch-name> --worktree"
+                fi
+            fi
+            
+            git_branch_session "$session_name" "$branch_name" "$use_worktree"
             ;;
         "help"|"-h"|"--help")
             show_usage

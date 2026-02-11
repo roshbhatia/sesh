@@ -1,16 +1,18 @@
 # sesh
 
-Multi-repo session manager for developers who work across multiple repositories.
+Multi-repo session manager with powerful git integration for developers who work across multiple repositories.
 
 ## What is sesh?
 
 `sesh` creates isolated workspaces (sessions) with symlinks to your frequently-used repositories. Each session is a directory containing:
 - Symlinks to git repos organized by `org/repo-name`
-- A basic `shell.nix` for Nix environments
+- A pre-configured `shell.nix` with common development stacks
 - A `.envrc` file for direnv integration
 - Session metadata (description)
+- **Git operations across all repos simultaneously**
+- **Transparent worktree support for parallel feature work**
 
-Perfect for when you need to work across multiple repos but don't want to navigate through your entire `~/github` directory.
+Perfect for when you need to work across multiple repos with synchronized branches and unified git operations.
 
 ## Installation
 
@@ -20,6 +22,8 @@ Perfect for when you need to work across multiple repos but don't want to naviga
 - [fzf](https://github.com/junegunn/fzf) - For fuzzy finding and multi-select
 - [gum](https://github.com/charmbracelet/gum) - For beautiful terminal UI
 - [direnv](https://direnv.net/) - (Optional) For automatic environment loading
+- [git](https://git-scm.com/) - For git integration features
+- [bats-core](https://github.com/bats-core/bats-core) - (Optional) For running tests
 
 ### Install sesh
 
@@ -44,6 +48,19 @@ autoload -Uz compinit && compinit
 ```
 
 After installation, restart your shell or run `exec zsh` for completions to take effect.
+
+## Shell Integration
+
+Add this to your `.zshrc` for the best experience:
+
+```bash
+eval "$(sesh init zsh)"
+```
+
+This provides:
+- `s <session>` - Quick navigate to any session
+- `si` - Interactive session selector with preview
+- Tab completion for all commands and session names
 
 ## Usage
 
@@ -108,8 +125,66 @@ sesh remove my-project
 # Rename a session
 sesh rename old-name new-name
 
+# Update session description
+sesh describe my-project "Updated description here"
+
+# Show current description
+sesh describe my-project
+
 # Delete a session
 sesh delete my-project
+```
+
+## Git Integration
+
+Work with git across all repos in a session simultaneously.
+
+### Check status across all repos
+
+```bash
+sesh status my-project
+
+# Shows:
+# - Current branch for each repo
+# - Modified/staged/untracked files
+# - Commits ahead/behind remote
+```
+
+### Sync all repos
+
+```bash
+# Pull all repos (skips repos with uncommitted changes)
+sesh sync my-project
+
+# Fetch only (no pull)
+sesh sync my-project --fetch
+```
+
+### Branch management
+
+```bash
+# Create/switch to branch in all repos
+sesh branch my-project feature-x
+
+# Show current branches
+sesh branch my-project --status
+
+# Create isolated worktree session (for parallel feature work)
+sesh branch my-project feature-y --worktree
+# This creates "my-project-feature-y" session with git worktrees
+# Work on feature-y without affecting your main workspace
+```
+
+### Execute commands across all repos
+
+```bash
+# Run any command in all repos
+sesh exec my-project git fetch
+sesh exec my-project git log -1
+sesh exec my-project npm install
+
+# Commands run in each repo directory
+# Exit codes are aggregated
 ```
 
 ## Directory Structure
@@ -140,15 +215,46 @@ sesh new platform "NRF platform composition work"
 
 # Access the session
 cd "$(sesh platform)"
+# Or with shell integration: s platform
 
 # Open in editor with all repos accessible
 code .
 
-# Add more repos later
-sesh add platform
+# Check git status across all repos
+sesh status platform
 
-# Clean up when done
-sesh delete platform
+# Create feature branch in all repos
+sesh branch platform feature-auth-improvements
+
+# Work on your changes...
+
+# Sync all repos
+sesh sync platform
+
+# Need to experiment? Create a worktree session
+sesh branch platform experimental-refactor --worktree
+s platform-experimental-refactor
+# Work independently, delete when done
+
+# Clean up
+sesh delete platform-experimental-refactor  # Cleans up worktrees automatically
+```
+
+### Parallel feature development
+
+```bash
+# Main work in original session
+cd "$(sesh platform)"
+# On feature-a branch
+
+# Need to work on feature-b without stashing?
+sesh branch platform feature-b --worktree
+
+# Now you have two independent sessions:
+s platform            # Working on feature-a
+s platform-feature-b  # Working on feature-b
+
+# Both sessions share git history but have independent working trees
 ```
 
 ### Shell integration
@@ -156,22 +262,35 @@ sesh delete platform
 Add to your `.zshrc` or `.bashrc` for quick access:
 
 ```bash
-# Quick session switcher
-s() {
-    local session_path=$(sesh "$1")
-    if [[ -n "$session_path" ]]; then
-        cd "$session_path"
-    fi
-}
-
-# Usage: s my-project
+# Already provided by: eval "$(sesh init zsh)"
+# This gives you:
+# - s <session>  : Quick cd to session
+# - si           : Interactive selector
+# - Tab completion everywhere
 ```
 
-Or use with tmux/zellij:
+Example usage with shell integration:
+
+```bash
+# Navigate to session
+s my-project
+
+# Interactive picker
+si
+
+# All sesh commands have completion
+sesh branch <TAB>     # Shows session names
+sesh status <TAB>     # Shows session names
+```
+
+### Use with tmux/zellij
 
 ```bash
 # Open tmux session in sesh workspace
 tmux new-session -s my-project -c "$(sesh my-project)"
+
+# Or with shell integration
+tmux new-session -s my-project -c "$(s my-project)"
 ```
 
 ## Development
@@ -180,8 +299,11 @@ tmux new-session -s my-project -c "$(sesh my-project)"
 # Check dependencies
 task check
 
-# Run tests
+# Run tests (requires bats-core)
 task test
+
+# Install bats on macOS
+brew install bats-core
 
 # Install locally
 task install
@@ -193,18 +315,23 @@ task clean
 ## Why sesh?
 
 - **Focused workspaces**: Group related repos without cluttering your main directories
-- **Fast navigation**: Jump to multi-repo workspaces instantly
-- **Nix integration**: Each session has its own shell.nix for project-specific tools
+- **Fast navigation**: Jump to multi-repo workspaces instantly with `s` command
+- **Git integration**: Manage branches, sync repos, check status across all repos at once
+- **Worktree support**: Work on multiple branches in parallel without stashing
+- **Nix integration**: Each session has pre-configured shell.nix with common stacks
 - **Organized**: Repos are symlinked with `org/repo` structure for clarity
 - **zoxide-powered**: Leverages your existing directory history
 - **Beautiful UI**: Uses gum for polished terminal interactions
+- **Shell integration**: Natural `s` and `si` commands with completion
 
 ## Tips
 
 1. **Use with direnv**: Run `direnv allow` in your session directory to auto-load the Nix environment
-2. **Customize shell.nix**: Edit the generated shell.nix to add project-specific tools
+2. **Customize shell.nix**: Edit the generated shell.nix and uncomment the stacks you need (Go, Node, Python, Rust, etc.)
 3. **Session naming**: Use descriptive names like `platform-v2`, `experiments`, `client-work`
-4. **Regular cleanup**: Delete sessions when projects are done to keep things tidy
+4. **Worktrees for experiments**: Use `--worktree` flag when you want to experiment without affecting your main work
+5. **Regular cleanup**: Delete worktree sessions when done to keep things tidy
+6. **Git workflows**: Use `sesh branch` to synchronize branch changes across all repos in a session
 
 ## License
 

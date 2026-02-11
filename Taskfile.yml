@@ -41,11 +41,37 @@ tasks:
       - echo "✓ Removed zsh completion"
 
   test:
-    desc: Run basic tests on sesh
+    desc: Run tests with bats
+    deps:
+      - check-test-deps
     cmds:
-      - ./sesh help
-      - echo ""
-      - echo "✓ sesh --help works"
+      - bats test/
+
+  check-test-deps:
+    desc: Check if test dependencies are installed
+    cmds:
+      - |
+        if ! command -v bats >/dev/null 2>&1; then
+          echo "Error: bats-core is not installed"
+          echo "Install with: brew install bats-core (macOS)"
+          echo "Or see: https://github.com/bats-core/bats-core#installation"
+          exit 1
+        fi
+    silent: true
+
+  test-watch:
+    desc: Run tests in watch mode
+    deps:
+      - check-test-deps
+    cmds:
+      - |
+        while true; do
+          clear
+          bats test/
+          echo ""
+          echo "Watching for changes... (Ctrl+C to stop)"
+          sleep 2
+        done
 
   clean:
     desc: Clean up test sessions
@@ -62,6 +88,11 @@ tasks:
         command -v fzf >/dev/null 2>&1 && echo "✓ fzf installed" || echo "✗ fzf not found"
         command -v gum >/dev/null 2>&1 && echo "✓ gum installed" || echo "✗ gum not found"
         command -v direnv >/dev/null 2>&1 && echo "✓ direnv installed (optional)" || echo "○ direnv not found (optional)"
+        command -v git >/dev/null 2>&1 && echo "✓ git installed" || echo "✗ git not found"
+        echo ""
+        echo "Testing dependencies:"
+        command -v bats >/dev/null 2>&1 && echo "✓ bats-core installed" || echo "○ bats-core not found (needed for tests)"
+
 
   default:
     desc: Show available tasks

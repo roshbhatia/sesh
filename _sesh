@@ -25,6 +25,7 @@ _sesh() {
                 'remove:Remove repos from a session'
                 'delete:Delete a session'
                 'rename:Rename a session'
+                'describe:Show or update session description'
                 'help:Show help message'
                 'version:Show version'
             )
@@ -33,7 +34,7 @@ _sesh() {
             ;;
         args)
             case $line[1] in
-                add|remove|delete)
+                add|remove|delete|describe)
                     _sesh_sessions
                     ;;
                 rename)
