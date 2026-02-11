@@ -1,0 +1,462 @@
+#!/usr/bin/env bash
+# sesh - Multi-repo session manager
+# Manages isolated development workspaces with symlinks to multiple repositories
+
+set -euo pipefail
+
+readonly SESH_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/sesh"
+readonly VERSION="1.0.0"
+
+# Dependency checks
+check_dependencies() {
+    local missing=()
+    
+    command -v zoxide >/dev/null 2>&1 || missing+=("zoxide")
+    command -v gum >/dev/null 2>&1 || missing+=("gum")
+    
+    if [[ ${#missing[@]} -gt 0 ]]; then
+        echo "Error: Missing required dependencies: ${missing[*]}" >&2
+        echo "Please install them to continue." >&2
+        exit 1
+    fi
+}
+
+# Helper functions
+error() {
+    gum style --foreground 196 "Error: $1" >&2
+    exit 1
+}
+
+success() {
+    gum style --foreground 42 "$1"
+}
+
+info() {
+    gum style --foreground 86 "$1"
+}
+
+warn() {
+    gum style --foreground 214 "$1"
+}
+
+get_session_path() {
+    local name="$1"
+    echo "${SESH_ROOT}/${name}"
+}
+
+session_exists() {
+    local name="$1"
+    [[ -d "$(get_session_path "$name")" ]]
+}
+
+validate_session_name() {
+    local name="$1"
+    
+    if [[ -z "$name" ]]; then
+        error "Session name cannot be empty"
+    fi
+    
+    if [[ ! "$name" =~ ^[a-zA-Z0-9_-]+$ ]]; then
+        error "Session name must contain only letters, numbers, hyphens, and underscores"
+    fi
+}
+
+extract_org_repo() {
+    local path="$1"
+    local parent_dir=$(basename "$(dirname "$path")")
+    local repo_name=$(basename "$path")
+    echo "${parent_dir}/${repo_name}"
+}
+
+# Core operations
+create_session() {
+    local name="$1"
+    local description="${2:-}"
+    
+    validate_session_name "$name"
+    
+    if session_exists "$name"; then
+        error "Session '${name}' already exists"
+    fi
+    
+    # Get description if not provided
+    if [[ -z "$description" ]]; then
+        description=$(gum input --placeholder "Session description (optional)" --prompt "Description: ") || true
+    fi
+    
+    local session_path=$(get_session_path "$name")
+    
+    # Create session directory
+    mkdir -p "$session_path"
+    
+    # Write description
+    if [[ -n "$description" ]]; then
+        echo "$description" > "$session_path/.sesh-desc"
+    fi
+    
+    # Create shell.nix
+    cat > "$session_path/shell.nix" <<'EOF'
+{ pkgs ? import <nixpkgs> {} }:
+
+pkgs.mkShell {
+  buildInputs = with pkgs; [
+    # Add your development tools here
+  ];
+  
+  shellHook = ''
+    echo "Session: $(basename $PWD)"
+  '';
+}
+EOF
+    
+    # Create .envrc
+    echo "use nix" > "$session_path/.envrc"
+    
+    # Select and add repos
+    info "Select repositories for this session..."
+    sleep 0.5
+    select_and_add_repos "$session_path"
+    
+    success "Created session '${name}'"
+    echo "$session_path"
+}
+
+list_sessions() {
+    if [[ ! -d "$SESH_ROOT" ]] || [[ -z "$(ls -A "$SESH_ROOT" 2>/dev/null)" ]]; then
+        info "No sessions found. Create one with: sesh new <name>"
+        return
+    fi
+    
+    gum style --border rounded --padding "0 1" --margin "1 0" "Sessions"
+    echo
+    
+    local sessions=()
+    local descriptions=()
+    local repo_counts=()
+    
+    for session_dir in "$SESH_ROOT"/*; do
+        if [[ ! -d "$session_dir" ]]; then
+            continue
+        fi
+        
+        local name=$(basename "$session_dir")
+        local desc=""
+        local count=0
+        
+        if [[ -f "$session_dir/.sesh-desc" ]]; then
+            desc=$(cat "$session_dir/.sesh-desc")
+        fi
+        
+        # Count symlinks (repos)
+        count=$(find "$session_dir" -type l 2>/dev/null | wc -l | tr -d ' ')
+        
+        # Format output
+        gum style --foreground 212 --bold "$name"
+        if [[ -n "$desc" ]]; then
+            echo "  $desc"
+        fi
+        echo "  ${count} repo(s)"
+        echo
+    done
+}
+
+select_and_add_repos() {
+    local session_path="$1"
+    
+    # Get all paths from zoxide
+    local zoxide_list=$(zoxide query -l 2>/dev/null || true)
+    
+    if [[ -z "$zoxide_list" ]]; then
+        warn "No directories found in zoxide database"
+        return
+    fi
+    
+    # Use gum filter for multi-select
+    local selected_repos=$(echo "$zoxide_list" | gum filter \
+        --no-limit \
+        --placeholder="Select repos (Space to select, Enter to confirm)" \
+        --header="Select repositories to add to session" \
+        --height=20) || true
+    
+    if [[ -z "$selected_repos" ]]; then
+        warn "No repositories selected"
+        return
+    fi
+    
+    # Create symlinks for selected repos
+    while IFS= read -r repo_path; do
+        create_symlink "$session_path" "$repo_path"
+    done <<< "$selected_repos"
+}
+
+create_symlink() {
+    local session_path="$1"
+    local repo_path="$2"
+    
+    if [[ ! -e "$repo_path" ]]; then
+        warn "Path does not exist, skipping: $repo_path"
+        return
+    fi
+    
+    local org_repo=$(extract_org_repo "$repo_path")
+    local link_path="$session_path/$org_repo"
+    
+    # Create parent directory if needed
+    mkdir -p "$(dirname "$link_path")"
+    
+    # Create symlink
+    if [[ -e "$link_path" ]]; then
+        warn "Symlink already exists, skipping: $org_repo"
+    else
+        ln -s "$repo_path" "$link_path"
+        success "  Linked: $org_repo"
+    fi
+}
+
+add_repos_to_session() {
+    local name="$1"
+    
+    if ! session_exists "$name"; then
+        error "Session '${name}' does not exist"
+    fi
+    
+    local session_path=$(get_session_path "$name")
+    info "Adding repositories to session '${name}'..."
+    select_and_add_repos "$session_path"
+}
+
+remove_repos_from_session() {
+    local name="$1"
+    
+    if ! session_exists "$name"; then
+        error "Session '${name}' does not exist"
+    fi
+    
+    local session_path=$(get_session_path "$name")
+    
+    # Find all symlinks in the session
+    local symlinks=$(find "$session_path" -type l -exec echo {} \; 2>/dev/null | sed "s|^$session_path/||" || true)
+    
+    if [[ -z "$symlinks" ]]; then
+        warn "No repositories found in session '${name}'"
+        return
+    fi
+    
+    # Use gum filter for multi-select
+    local to_remove=$(echo "$symlinks" | gum filter \
+        --no-limit \
+        --placeholder="Select repos to remove (Space to select, Enter to confirm)" \
+        --header="Remove repositories from session: ${name}" \
+        --height=15) || true
+    
+    if [[ -z "$to_remove" ]]; then
+        info "No repositories selected for removal"
+        return
+    fi
+    
+    # Remove selected symlinks
+    while IFS= read -r link; do
+        local full_path="$session_path/$link"
+        if [[ -L "$full_path" ]]; then
+            rm "$full_path"
+            success "  Removed: $link"
+            
+            # Clean up empty parent directories
+            local parent_dir=$(dirname "$full_path")
+            if [[ -d "$parent_dir" ]] && [[ -z "$(ls -A "$parent_dir" 2>/dev/null)" ]]; then
+                rmdir "$parent_dir"
+            fi
+        fi
+    done <<< "$to_remove"
+}
+
+delete_session() {
+    local name="$1"
+    
+    if ! session_exists "$name"; then
+        error "Session '${name}' does not exist"
+    fi
+    
+    # Confirm deletion
+    gum confirm "Delete session '${name}'? This cannot be undone." || {
+        info "Deletion cancelled"
+        exit 0
+    }
+    
+    local session_path=$(get_session_path "$name")
+    rm -rf "$session_path"
+    success "Deleted session '${name}'"
+}
+
+rename_session() {
+    local old_name="$1"
+    local new_name="$2"
+    
+    if ! session_exists "$old_name"; then
+        error "Session '${old_name}' does not exist"
+    fi
+    
+    validate_session_name "$new_name"
+    
+    if session_exists "$new_name"; then
+        error "Session '${new_name}' already exists"
+    fi
+    
+    local old_path=$(get_session_path "$old_name")
+    local new_path=$(get_session_path "$new_name")
+    
+    mv "$old_path" "$new_path"
+    success "Renamed session '${old_name}' to '${new_name}'"
+    echo "$new_path"
+}
+
+interactive_menu() {
+    # Check if any sessions exist
+    local has_sessions=false
+    if [[ -d "$SESH_ROOT" ]] && [[ -n "$(ls -A "$SESH_ROOT" 2>/dev/null)" ]]; then
+        has_sessions=true
+    fi
+    
+    local options=()
+    if $has_sessions; then
+        options+=("Open existing session")
+    fi
+    options+=("Create new session")
+    if $has_sessions; then
+        options+=("List all sessions")
+    fi
+    options+=("Exit")
+    
+    local choice=$(printf '%s\n' "${options[@]}" | gum choose --header "What would you like to do?")
+    
+    case "$choice" in
+        "Open existing session")
+            open_existing_session
+            ;;
+        "Create new session")
+            local name=$(gum input --placeholder "Session name" --prompt "Name: ")
+            if [[ -n "$name" ]]; then
+                create_session "$name"
+            else
+                warn "Session name cannot be empty"
+            fi
+            ;;
+        "List all sessions")
+            list_sessions
+            ;;
+        "Exit")
+            exit 0
+            ;;
+        *)
+            exit 0
+            ;;
+    esac
+}
+
+open_existing_session() {
+    if [[ ! -d "$SESH_ROOT" ]] || [[ -z "$(ls -A "$SESH_ROOT" 2>/dev/null)" ]]; then
+        warn "No sessions found"
+        return
+    fi
+    
+    local sessions=()
+    for session_dir in "$SESH_ROOT"/*; do
+        if [[ -d "$session_dir" ]]; then
+            sessions+=("$(basename "$session_dir")")
+        fi
+    done
+    
+    local choice=$(printf '%s\n' "${sessions[@]}" | gum choose --header "Select a session:")
+    
+    if [[ -n "$choice" ]]; then
+        echo "$(get_session_path "$choice")"
+    fi
+}
+
+show_usage() {
+    cat <<EOF
+sesh - Multi-repo session manager v${VERSION}
+
+Usage:
+  sesh                          Interactive mode
+  sesh <session-name>           Print path to session
+  sesh new <name> [desc]        Create new session
+  sesh list                     List all sessions
+  sesh add <session-name>       Add repos to session
+  sesh remove <session-name>    Remove repos from session
+  sesh delete <session-name>    Delete a session
+  sesh rename <old> <new>       Rename a session
+  sesh help                     Show this help message
+
+Examples:
+  sesh                          # Interactive menu
+  sesh new my-project           # Create new session
+  cd "\$(sesh my-project)"       # Change to session directory
+  sesh add my-project           # Add more repos
+  sesh list                     # Show all sessions
+
+EOF
+}
+
+# Main entry point
+main() {
+    check_dependencies
+    
+    # Ensure sesh root exists
+    mkdir -p "$SESH_ROOT"
+    
+    case "${1:-}" in
+        ""|"--interactive")
+            interactive_menu
+            ;;
+        "list"|"-l"|"--list")
+            list_sessions
+            ;;
+        "new"|"create")
+            if [[ $# -lt 2 ]]; then
+                error "Usage: sesh new <name> [description]"
+            fi
+            create_session "${2}" "${3:-}"
+            ;;
+        "add")
+            if [[ $# -ne 2 ]]; then
+                error "Usage: sesh add <session-name>"
+            fi
+            add_repos_to_session "${2}"
+            ;;
+        "remove"|"rm")
+            if [[ $# -ne 2 ]]; then
+                error "Usage: sesh remove <session-name>"
+            fi
+            remove_repos_from_session "${2}"
+            ;;
+        "delete"|"del")
+            if [[ $# -ne 2 ]]; then
+                error "Usage: sesh delete <session-name>"
+            fi
+            delete_session "${2}"
+            ;;
+        "rename"|"mv")
+            if [[ $# -ne 3 ]]; then
+                error "Usage: sesh rename <old-name> <new-name>"
+            fi
+            rename_session "${2}" "${3}"
+            ;;
+        "help"|"-h"|"--help")
+            show_usage
+            ;;
+        "version"|"-v"|"--version")
+            echo "sesh v${VERSION}"
+            ;;
+        *)
+            # Assume it's a session name
+            if session_exists "${1}"; then
+                get_session_path "${1}"
+            else
+                error "Session '${1}' does not exist. Use 'sesh list' to see available sessions."
+            fi
+            ;;
+    esac
+}
+
+main "$@"

@@ -1,0 +1,54 @@
+version: '3'
+
+vars:
+  INSTALL_DIR: '{{.HOME}}/bin'
+  SCRIPT_NAME: sesh
+
+tasks:
+  install:
+    desc: Install sesh to ~/bin
+    cmds:
+      - mkdir -p {{.INSTALL_DIR}}
+      - cp sesh {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}
+      - chmod +x {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}
+      - echo "✓ Installed sesh to {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}"
+      - echo ""
+      - echo "Make sure {{.INSTALL_DIR}} is in your PATH:"
+      - echo '  export PATH="$HOME/bin:$PATH"'
+    sources:
+      - sesh
+    generates:
+      - '{{.INSTALL_DIR}}/{{.SCRIPT_NAME}}'
+
+  uninstall:
+    desc: Uninstall sesh from ~/bin
+    cmds:
+      - rm -f {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}
+      - echo "✓ Uninstalled sesh"
+
+  test:
+    desc: Run basic tests on sesh
+    cmds:
+      - ./sesh help
+      - echo ""
+      - echo "✓ sesh --help works"
+
+  clean:
+    desc: Clean up test sessions
+    cmds:
+      - rm -rf ${XDG_STATE_HOME:-$HOME/.local/state}/sesh
+      - echo "✓ Cleaned up all sessions"
+
+  check:
+    desc: Check if dependencies are installed
+    cmds:
+      - |
+        echo "Checking dependencies..."
+        command -v zoxide >/dev/null 2>&1 && echo "✓ zoxide installed" || echo "✗ zoxide not found"
+        command -v gum >/dev/null 2>&1 && echo "✓ gum installed" || echo "✗ gum not found"
+        command -v direnv >/dev/null 2>&1 && echo "✓ direnv installed (optional)" || echo "○ direnv not found (optional)"
+
+  default:
+    desc: Show available tasks
+    cmds:
+      - task --list
