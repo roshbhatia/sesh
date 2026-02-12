@@ -1,98 +1,102 @@
 version: '3'
 
 vars:
+  BINARY_NAME: sesh
   INSTALL_DIR: '{{.HOME}}/bin'
-  COMPLETION_DIR: '{{.HOME}}/.local/share/zsh/site-functions'
-  SCRIPT_NAME: sesh
 
 tasks:
+  build:
+    desc: Build sesh binary
+    cmds:
+      - mkdir -p bin
+      - go build -o bin/{{.BINARY_NAME}} .
+    sources:
+      - '**/*.go'
+      - go.mod
+      - go.sum
+    generates:
+      - bin/{{.BINARY_NAME}}
+
   install:
-    desc: Install sesh to ~/bin and zsh completion
+    desc: Install sesh to ~/bin
+    deps:
+      - build
     cmds:
       - mkdir -p {{.INSTALL_DIR}}
-      - mkdir -p {{.COMPLETION_DIR}}
-      - cp sesh {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}
-      - chmod +x {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}
-      - cp _sesh {{.COMPLETION_DIR}}/_sesh
-      - echo "✓ Installed sesh to {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}"
-      - echo "✓ Installed zsh completion to {{.COMPLETION_DIR}}/_sesh"
+      - cp bin/{{.BINARY_NAME}} {{.INSTALL_DIR}}/{{.BINARY_NAME}}
+      - chmod +x {{.INSTALL_DIR}}/{{.BINARY_NAME}}
+      - echo "Installed sesh to {{.INSTALL_DIR}}/{{.BINARY_NAME}}"
       - echo ""
-      - echo "Make sure {{.INSTALL_DIR}} is in your PATH"
-      - echo '  export PATH="$HOME/bin:$PATH"'
+      - echo "Add to your .zshrc"
+      - echo '  eval "$(sesh init zsh)"'
       - echo ""
-      - echo "For completions to work, add to your .zshrc (if not already present)"
-      - echo '  fpath=(~/.local/share/zsh/site-functions $fpath)'
-      - echo '  autoload -Uz compinit && compinit'
-      - echo ""
-      - echo "Then restart your shell or run - exec zsh"
-    sources:
-      - sesh
-      - _sesh
-    generates:
-      - '{{.INSTALL_DIR}}/{{.SCRIPT_NAME}}'
-      - '{{.COMPLETION_DIR}}/_sesh'
+      - echo "Then restart your shell"
 
   uninstall:
-    desc: Uninstall sesh from ~/bin and remove zsh completion
+    desc: Uninstall sesh from ~/bin
     cmds:
-      - rm -f {{.INSTALL_DIR}}/{{.SCRIPT_NAME}}
-      - rm -f {{.COMPLETION_DIR}}/_sesh
-      - echo "✓ Uninstalled sesh"
-      - echo "✓ Removed zsh completion"
+      - rm -f {{.INSTALL_DIR}}/{{.BINARY_NAME}}
+      - echo "Uninstalled sesh"
 
   test:
-    desc: Run tests with bats
-    deps:
-      - check-test-deps
+    desc: Run all tests
     cmds:
-      - bats test/
+      - go test ./... -v
 
-  check-test-deps:
-    desc: Check if test dependencies are installed
+  test-short:
+    desc: Run tests without verbose output
     cmds:
-      - |
-        if ! command -v bats >/dev/null 2>&1; then
-          echo "Error: bats-core is not installed"
-          echo "Install with: brew install bats-core (macOS)"
-          echo "Or see: https://github.com/bats-core/bats-core#installation"
-          exit 1
-        fi
-    silent: true
+      - go test ./...
 
-  test-watch:
-    desc: Run tests in watch mode
-    deps:
-      - check-test-deps
+  test-coverage:
+    desc: Run tests with coverage
     cmds:
-      - |
-        while true; do
-          clear
-          bats test/
-          echo ""
-          echo "Watching for changes... (Ctrl+C to stop)"
-          sleep 2
-        done
+      - go test ./... -coverprofile=coverage.out
+      - go tool cover -html=coverage.out -o coverage.html
+      - echo "Coverage report generated at coverage.html"
+
+  lint:
+    desc: Run linter (requires golangci-lint)
+    cmds:
+      - golangci-lint run
+
+  fmt:
+    desc: Format Go code
+    cmds:
+      - go fmt ./...
+      - gofmt -s -w .
 
   clean:
-    desc: Clean up test sessions
+    desc: Clean build artifacts
     cmds:
-      - rm -rf ${XDG_STATE_HOME:-$HOME/.local/state}/sesh
-      - echo "✓ Cleaned up all sessions"
+      - rm -rf bin/
+      - rm -f coverage.out coverage.html
+      - echo "Cleaned build artifacts"
+
+  clean-sessions:
+    desc: Clean up all sessions
+    cmds:
+      - rm -rf "$${XDG_STATE_HOME:-$$HOME/.local/state}/sesh"
+      - echo "Cleaned up all sessions"
+
+  dev:
+    desc: Build and install for development
+    cmds:
+      - task: build
+      - task: test-short
+      - task: install
 
   check:
-    desc: Check if dependencies are installed
+    desc: Check if required dependencies are installed
     cmds:
       - |
         echo "Checking dependencies..."
-        command -v zoxide >/dev/null 2>&1 && echo "✓ zoxide installed" || echo "✗ zoxide not found"
-        command -v fzf >/dev/null 2>&1 && echo "✓ fzf installed" || echo "✗ fzf not found"
-        command -v gum >/dev/null 2>&1 && echo "✓ gum installed" || echo "✗ gum not found"
-        command -v direnv >/dev/null 2>&1 && echo "✓ direnv installed (optional)" || echo "○ direnv not found (optional)"
-        command -v git >/dev/null 2>&1 && echo "✓ git installed" || echo "✗ git not found"
+        command -v go >/dev/null 2>&1 && echo "go installed" || echo "go not found"
+        command -v zoxide >/dev/null 2>&1 && echo "zoxide installed" || echo "zoxide not found"
+        command -v fzf >/dev/null 2>&1 && echo "fzf installed" || echo "fzf not found"
+        command -v git >/dev/null 2>&1 && echo "git installed" || echo "git not found"
         echo ""
-        echo "Testing dependencies:"
-        command -v bats >/dev/null 2>&1 && echo "✓ bats-core installed" || echo "○ bats-core not found (needed for tests)"
-
+        go version
 
   default:
     desc: Show available tasks

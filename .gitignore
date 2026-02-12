@@ -1,1 +1,9 @@
 !docs/template/AGENTS.md
+
+# Go build artifacts
+bin/
+*.out
+coverage.html
+
+# Task cache
+.task/

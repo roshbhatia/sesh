@@ -4,8 +4,9 @@
 
 set -euo pipefail
 
-readonly SESH_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/sesh"
-readonly VERSION="1.0.0"
+readonly SESH_ROOT="${XDG_STATE_HOME:-$HOME/.local/state}/sesh/sessions"
+readonly SESH_REPOS="${XDG_STATE_HOME:-$HOME/.local/state}/sesh/repos"
+readonly VERSION="2.0.0"
 
 # Dependency checks
 check_dependencies() {
@@ -13,7 +14,6 @@ check_dependencies() {
     
     command -v zoxide >/dev/null 2>&1 || missing+=("zoxide")
     command -v fzf >/dev/null 2>&1 || missing+=("fzf")
-    command -v gum >/dev/null 2>&1 || missing+=("gum")
     
     if [[ ${#missing[@]} -gt 0 ]]; then
         echo "Error: Missing required dependencies: ${missing[*]}" >&2
@@ -24,20 +24,20 @@ check_dependencies() {
 
 # Helper functions
 error() {
-    gum style --foreground 196 "Error: $1" >&2
+    echo -e "\033[0;31mError: $1\033[0m" >&2
     exit 1
 }
 
 success() {
-    gum style --foreground 42 "$1"
+    echo -e "\033[0;32m$1\033[0m"
 }
 
 info() {
-    gum style --foreground 86 "$1"
+    echo -e "\033[0;36m$1\033[0m"
 }
 
 warn() {
-    gum style --foreground 214 "$1"
+    echo -e "\033[0;33m$1\033[0m"
 }
 
 get_session_path() {
@@ -71,6 +71,79 @@ extract_org_repo() {
     echo "${parent_dir}/${repo_name}"
 }
 
+# Get or ensure main repo exists
+ensure_main_repo() {
+    local source_path="$1"
+    local org_repo
+    org_repo=$(extract_org_repo "$source_path")
+    
+    local main_repo_path="$SESH_REPOS/$org_repo"
+    
+    # If main repo already exists, return it
+    if [[ -d "$main_repo_path" ]] && is_git_repo "$main_repo_path"; then
+        echo "$main_repo_path"
+        return 0
+    fi
+    
+    # Create parent directory
+    mkdir -p "$(dirname "$main_repo_path")"
+    
+    # If source is a git repo, create worktree base from it
+    if is_git_repo "$source_path"; then
+        info "Setting up main repo: $org_repo"
+        
+        # Check if source is itself a worktree
+        if git -C "$source_path" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+            # Clone from source to create independent repo
+            git clone "$source_path" "$main_repo_path" --quiet 2>/dev/null || {
+                warn "Failed to clone $source_path"
+                return 1
+            }
+        fi
+        
+        echo "$main_repo_path"
+        return 0
+    else
+        warn "Source path is not a git repository: $source_path"
+        return 1
+    fi
+}
+
+# Create worktree for a session
+create_worktree_for_session() {
+    local session_path="$1"
+    local source_path="$2"
+    local branch_name="${3:-}"
+    
+    local org_repo
+    org_repo=$(extract_org_repo "$source_path")
+    
+    # Ensure main repo exists
+    local main_repo_path
+    main_repo_path=$(ensure_main_repo "$source_path") || return 1
+    
+    # Determine target path in session
+    local worktree_path="$session_path/$org_repo"
+    mkdir -p "$(dirname "$worktree_path")"
+    
+    # If no branch specified, use current branch from main repo
+    if [[ -z "$branch_name" ]]; then
+        branch_name=$(git -C "$main_repo_path" branch --show-current 2>/dev/null || echo "main")
+    fi
+    
+    # Create worktree
+    if git -C "$main_repo_path" worktree add "$worktree_path" "$branch_name" 2>/dev/null; then
+        success "  Linked: $org_repo (branch: $branch_name)"
+        return 0
+    elif git -C "$main_repo_path" worktree add "$worktree_path" -b "$branch_name" 2>/dev/null; then
+        success "  Linked: $org_repo (new branch: $branch_name)"
+        return 0
+    else
+        warn "  Failed to create worktree: $org_repo"
+        return 1
+    fi
+}
+
 # Core operations
 create_session() {
     local name="$1"
@@ -84,7 +157,7 @@ create_session() {
     
     # Get description if not provided
     if [[ -z "$description" ]]; then
-        description=$(gum input --placeholder "Session description (optional)" --prompt "Description: ") || true
+        read -r -p "Description (optional): " description || true
     fi
     
     local session_path
@@ -143,6 +216,12 @@ EOF
     # Create .envrc
     echo "use nix" > "$session_path/.envrc"
     
+    # Initialize bd for issue tracking
+    if command -v bd >/dev/null 2>&1; then
+        info "Initializing bd issue tracker..."
+        (cd "$session_path" && bd init --quiet 2>/dev/null || true)
+    fi
+    
     # Select and add repos
     info "Select repositories for this session..."
     sleep 0.5
@@ -158,7 +237,9 @@ list_sessions() {
         return
     fi
     
-    gum style --border rounded --padding "0 1" --margin "1 0" "Sessions"
+    echo "╭──────────╮"
+    echo "│ Sessions │"
+    echo "╰──────────╯"
     echo
     
     for session_dir in "$SESH_ROOT"/*; do
@@ -179,7 +260,7 @@ list_sessions() {
         count=$(find "$session_dir" -type l 2>/dev/null | wc -l | tr -d ' ')
         
         # Format output
-        gum style --foreground 212 --bold "$name"
+        echo -e "\033[0;35m${name}\033[0m"
         if [[ -n "$desc" ]]; then
             echo "  $desc"
         fi
@@ -190,6 +271,7 @@ list_sessions() {
 
 select_and_add_repos() {
     local session_path="$1"
+    local branch_name="${2:-}"
     
     # Use zoxide query with fzf for multi-select
     local selected_repos
@@ -207,36 +289,19 @@ select_and_add_repos() {
         return
     fi
     
-    # Create symlinks for selected repos
+    # Create worktrees for selected repos
     while IFS= read -r repo_path; do
-        create_symlink "$session_path" "$repo_path"
+        create_worktree_for_session "$session_path" "$repo_path" "$branch_name"
     done <<< "$selected_repos"
 }
 
 create_symlink() {
+    # This function is deprecated but kept for compatibility
+    # Now we create worktrees instead
     local session_path="$1"
     local repo_path="$2"
     
-    if [[ ! -e "$repo_path" ]]; then
-        warn "Path does not exist, skipping: $repo_path"
-        return
-    fi
-    
-    local org_repo
-    local link_path
-    org_repo=$(extract_org_repo "$repo_path")
-    link_path="$session_path/$org_repo"
-    
-    # Create parent directory if needed
-    mkdir -p "$(dirname "$link_path")"
-    
-    # Create symlink
-    if [[ -e "$link_path" ]]; then
-        warn "Symlink already exists, skipping: $org_repo"
-    else
-        ln -s "$repo_path" "$link_path"
-        success "  Linked: $org_repo"
-    fi
+    create_worktree_for_session "$session_path" "$repo_path" ""
 }
 
 add_repos_to_session() {
@@ -312,48 +377,37 @@ delete_session() {
     local session_path
     session_path=$(get_session_path "$name")
     
-    # Check if this is a worktree session
-    local is_worktree=false
-    if [[ -f "$session_path/.sesh-worktree" ]]; then
-        is_worktree=true
-        info "This is a worktree session"
-    fi
-    
     # Confirm deletion
-    gum confirm "Delete session '${name}'? This cannot be undone." || {
+    read -r -p "Delete session '${name}'? This will remove all worktrees. (y/N): " confirm
+    if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
         info "Deletion cancelled"
         exit 0
-    }
+    fi
     
-    # If worktree session, clean up worktrees first
-    if [[ "$is_worktree" == "true" ]]; then
-        info "Cleaning up git worktrees..."
-        local repos
-        repos=$(get_repo_links "$session_path")
-        
-        while IFS= read -r link_path; do
-            local worktree_path
-            worktree_path=$(readlink "$link_path")
-            
-            if [[ -d "$worktree_path" ]] && is_git_repo "$worktree_path"; then
-                # Find the main repo by asking git
+    # Clean up all worktrees in the session
+    info "Cleaning up worktrees..."
+    local repos
+    repos=$(find "$session_path" -type d -name ".git" 2>/dev/null | sed 's|/.git$||' || true)
+    
+    if [[ -n "$repos" ]]; then
+        while IFS= read -r worktree_path; do
+            if [[ -d "$worktree_path/.git" ]]; then
+                # Find the main repo
                 local main_repo
-                main_repo=$(git -C "$worktree_path" rev-parse --git-common-dir 2>/dev/null | sed 's|/.git/worktrees/.*||')
+                main_repo=$(git -C "$worktree_path" rev-parse --git-common-dir 2>/dev/null | sed 's|/.git/worktrees/.*|/.git|' | sed 's|/.git$||')
                 
                 if [[ -n "$main_repo" ]] && [[ -d "$main_repo" ]]; then
-                    # Remove the worktree
+                    local worktree_name
+                    worktree_name=$(basename "$worktree_path")
                     if git -C "$main_repo" worktree remove "$worktree_path" --force 2>/dev/null; then
-                        success "  Removed worktree: $(basename "$worktree_path")"
-                    else
-                        # Try removing the directory if git worktree remove failed
-                        rm -rf "$worktree_path"
-                        git -C "$main_repo" worktree prune 2>/dev/null || true
+                        success "  Removed worktree: $worktree_name"
                     fi
                 fi
             fi
         done <<< "$repos"
     fi
     
+    # Remove session directory
     rm -rf "$session_path"
     success "Deleted session '${name}'"
 }
@@ -432,14 +486,14 @@ s() {
 
 # si - Interactive session selector (cd to selected)
 si() {
-    if [[ ! -d "${XDG_STATE_HOME:-$HOME/.local/state}/sesh" ]] || \
-       [[ -z "$(ls -A "${XDG_STATE_HOME:-$HOME/.local/state}/sesh" 2>/dev/null)" ]]; then
+    if [[ ! -d "${XDG_STATE_HOME:-$HOME/.local/state}/sesh/sessions" ]] || \
+       [[ -z "$(ls -A "${XDG_STATE_HOME:-$HOME/.local/state}/sesh/sessions" 2>/dev/null)" ]]; then
         echo "No sessions found. Create one with: sesh new <name>" >&2
         return 1
     fi
     
     local sessions=()
-    local sesh_root="${XDG_STATE_HOME:-$HOME/.local/state}/sesh"
+    local sesh_root="${XDG_STATE_HOME:-$HOME/.local/state}/sesh/sessions"
     
     for session_dir in "$sesh_root"/*; do
         if [[ -d "$session_dir" ]]; then
@@ -460,72 +514,76 @@ si() {
     fi
 }
 
-# Completion for s and si
-_sesh_complete_sessions() {
-    local sesh_root="${XDG_STATE_HOME:-$HOME/.local/state}/sesh"
-    if [[ -d "$sesh_root" ]]; then
-        local sessions=(${sesh_root}/*(/:t))
-        _describe 'session' sessions
-    fi
-}
-
-compdef _sesh_complete_sessions s
-compdef _sesh_complete_sessions si
-
-# Enhanced sesh completion
-_sesh_enhanced() {
-    local line state
-
-    function _sesh_sessions {
-        local sesh_root="${XDG_STATE_HOME:-$HOME/.local/state}/sesh"
+# Completion for s and si (only if compdef is available)
+if (( $+functions[compdef] )); then
+    _sesh_complete_sessions() {
+        local sesh_root="${XDG_STATE_HOME:-$HOME/.local/state}/sesh/sessions"
         if [[ -d "$sesh_root" ]]; then
             local sessions=(${sesh_root}/*(/:t))
             _describe 'session' sessions
         fi
     }
+    
+    compdef _sesh_complete_sessions s
+    compdef _sesh_complete_sessions si
+fi
 
-    _arguments -C \
-        '1: :->command' \
-        '*::arg:->args'
+# Enhanced sesh completion
+if (( $+functions[compdef] )); then
+    _sesh_enhanced() {
+        local line state
 
-    case $state in
-        command)
-            local -a commands
-            commands=(
-                'new:Create a new session'
-                'list:List all sessions'
-                'add:Add repos to an existing session'
-                'remove:Remove repos from a session'
-                'delete:Delete a session'
-                'rename:Rename a session'
-                'describe:Show or update session description'
-                'branch:Manage git branches across repos'
-                'status:Show git status for all repos'
-                'sync:Pull updates for all repos'
-                'exec:Execute command in all repos'
-                'init:Initialize shell integration'
-                'help:Show help message'
-                'version:Show version'
-            )
-            _describe 'command' commands
-            _sesh_sessions
-            ;;
-        args)
-            case $line[1] in
-                add|remove|delete|describe|branch|status|sync|exec)
-                    _sesh_sessions
-                    ;;
-                rename)
-                    if [[ $CURRENT -eq 2 ]]; then
+        function _sesh_sessions {
+            local sesh_root="${XDG_STATE_HOME:-$HOME/.local/state}/sesh/sessions"
+            if [[ -d "$sesh_root" ]]; then
+                local sessions=(${sesh_root}/*(/:t))
+                _describe 'session' sessions
+            fi
+        }
+
+        _arguments -C \
+            '1: :->command' \
+            '*::arg:->args'
+
+        case $state in
+            command)
+                local -a commands
+                commands=(
+                    'new:Create a new session'
+                    'list:List all sessions'
+                    'add:Add repos to an existing session'
+                    'remove:Remove repos from a session'
+                    'delete:Delete a session'
+                    'rename:Rename a session'
+                    'describe:Show or update session description'
+                    'branch:Manage git branches across repos'
+                    'status:Show git status for all repos'
+                    'sync:Pull updates for all repos'
+                    'exec:Execute command in all repos'
+                    'init:Initialize shell integration'
+                    'help:Show help message'
+                    'version:Show version'
+                )
+                _describe 'command' commands
+                _sesh_sessions
+                ;;
+            args)
+                case $line[1] in
+                    add|remove|delete|describe|branch|status|sync|exec)
                         _sesh_sessions
-                    fi
-                    ;;
-            esac
-            ;;
-    esac
-}
+                        ;;
+                    rename)
+                        if [[ $CURRENT -eq 2 ]]; then
+                            _sesh_sessions
+                        fi
+                        ;;
+                esac
+                ;;
+        esac
+    }
 
-compdef _sesh_enhanced sesh
+    compdef _sesh_enhanced sesh
+fi
 INIT_EOF
 }
 
@@ -533,7 +591,8 @@ INIT_EOF
 
 get_repo_links() {
     local session_path="$1"
-    find "$session_path" -type l 2>/dev/null | sort
+    # Find all git repositories (worktrees) in the session
+    find "$session_path" -type d -name ".git" 2>/dev/null | sed 's|/.git$||' | grep -v "^$session_path$" | sort || true
 }
 
 is_git_repo() {
@@ -564,14 +623,12 @@ git_status_session() {
     
     local has_errors=0
     
-    while IFS= read -r link_path; do
-        local repo_path
-        repo_path=$(readlink "$link_path")
+    while IFS= read -r repo_path; do
         local repo_name
-        repo_name=$(echo "$link_path" | sed "s|^$session_path/||")
+        repo_name=$(echo "$repo_path" | sed "s|^$session_path/||")
         
         if [[ ! -d "$repo_path" ]]; then
-            warn "  ${repo_name}: Target does not exist"
+            warn "  ${repo_name}: Does not exist"
             has_errors=1
             continue
         fi
@@ -592,7 +649,7 @@ git_status_session() {
         ahead_behind=$(git -C "$repo_path" rev-list --left-right --count @{upstream}...HEAD 2>/dev/null || echo "")
         
         # Format output
-        gum style --foreground 212 "  ${repo_name}"
+        echo -e "\033[0;35m  ${repo_name}\033[0m"
         echo "    Branch: ${branch}"
         
         if [[ -n "$ahead_behind" ]]; then
@@ -609,7 +666,7 @@ git_status_session() {
         fi
         
         if [[ -z "$status_output" ]]; then
-            gum style --foreground 42 "    Status: clean"
+            echo -e "    Status: \033[0;32mclean\033[0m"
         else
             local modified
             modified=$(echo "$status_output" | grep -c "^ M" || true)
@@ -618,7 +675,7 @@ git_status_session() {
             local staged
             staged=$(echo "$status_output" | grep -c "^[MADR]" || true)
             
-            gum style --foreground 214 "    Status: ${modified} modified, ${staged} staged, ${untracked} untracked"
+            echo -e "    Status: \033[0;33m${modified} modified, ${staged} staged, ${untracked} untracked\033[0m"
         fi
         echo
     done <<< "$repos"
@@ -651,14 +708,12 @@ git_sync_session() {
     local failed=0
     local succeeded=0
     
-    while IFS= read -r link_path; do
-        local repo_path
-        repo_path=$(readlink "$link_path")
+    while IFS= read -r repo_path; do
         local repo_name
-        repo_name=$(echo "$link_path" | sed "s|^$session_path/||")
+        repo_name=$(echo "$repo_path" | sed "s|^$session_path/||")
         
         if [[ ! -d "$repo_path" ]]; then
-            warn "  ${repo_name}: Target does not exist"
+            warn "  ${repo_name}: Does not exist"
             ((failed++))
             continue
         fi
@@ -737,19 +792,17 @@ git_exec_session() {
     local failed=0
     local succeeded=0
     
-    while IFS= read -r link_path; do
-        local repo_path
-        repo_path=$(readlink "$link_path")
+    while IFS= read -r repo_path; do
         local repo_name
-        repo_name=$(echo "$link_path" | sed "s|^$session_path/||")
+        repo_name=$(echo "$repo_path" | sed "s|^$session_path/||")
         
         if [[ ! -d "$repo_path" ]]; then
-            warn "  ${repo_name}: Target does not exist"
+            warn "  ${repo_name}: Does not exist"
             ((failed++))
             continue
         fi
         
-        gum style --foreground 212 "  ${repo_name}:"
+        echo -e "\033[0;35m  ${repo_name}:\033[0m"
         
         if (cd "$repo_path" && "${cmd[@]}" 2>&1 | sed 's/^/    /'); then
             ((succeeded++))
@@ -803,14 +856,12 @@ git_branch_session() {
     local failed=0
     local succeeded=0
     
-    while IFS= read -r link_path; do
-        local repo_path
-        repo_path=$(readlink "$link_path")
+    while IFS= read -r repo_path; do
         local repo_name
-        repo_name=$(echo "$link_path" | sed "s|^$session_path/||")
+        repo_name=$(echo "$repo_path" | sed "s|^$session_path/||")
         
         if [[ ! -d "$repo_path" ]]; then
-            warn "  ${repo_name}: Target does not exist"
+            warn "  ${repo_name}: Does not exist"
             ((failed++))
             continue
         fi
@@ -882,7 +933,7 @@ git_branch_status() {
         local default_branch
         default_branch=$(git -C "$repo_path" symbolic-ref refs/remotes/origin/HEAD 2>/dev/null | sed 's@^refs/remotes/origin/@@' || echo "main")
         
-        gum style --foreground 212 "  ${repo_name}"
+        echo -e "\033[0;35m  ${repo_name}\033[0m"
         echo "    Current: ${branch}"
         echo "    Default: ${default_branch}"
         echo
@@ -1030,7 +1081,7 @@ interactive_menu() {
             ;;
         "Create new session")
             local name
-            name=$(gum input --placeholder "Session name" --prompt "Name: ")
+            read -r -p "Session name: " name
             if [[ -n "$name" ]]; then
                 create_session "$name"
             else
@@ -1061,6 +1112,12 @@ open_existing_session() {
             sessions+=("$(basename "$session_dir")")
         fi
     done
+    
+    # Check if we actually have any sessions
+    if [[ ${#sessions[@]} -eq 0 ]]; then
+        warn "No sessions found"
+        return
+    fi
     
     local choice
     choice=$(printf '%s\n' "${sessions[@]}" | fzf \
@@ -1131,8 +1188,9 @@ EOF
 main() {
     check_dependencies
     
-    # Ensure sesh root exists
+    # Ensure sesh directories exist
     mkdir -p "$SESH_ROOT"
+    mkdir -p "$SESH_REPOS"
     
     case "${1:-}" in
         ""|"--interactive")

@@ -1,338 +1,393 @@
 # sesh
 
-Multi-repo session manager with powerful git integration for developers who work across multiple repositories.
+A streamlined session manager for developers who work across multiple repositories. Built in Go with focus on simplicity and git worktree integration.
 
 ## What is sesh?
 
-`sesh` creates isolated workspaces (sessions) with symlinks to your frequently-used repositories. Each session is a directory containing:
-- Symlinks to git repos organized by `org/repo-name`
-- A pre-configured `shell.nix` with common development stacks
-- A `.envrc` file for direnv integration
-- Session metadata (description)
-- **Git operations across all repos simultaneously**
-- **Transparent worktree support for parallel feature work**
+`sesh` creates isolated development workspaces (sessions) with:
+- **Git worktrees** for parallel feature development
+- **shell.nix** for reproducible environments
+- **Flat structure** - no complex nesting
+- **Fast navigation** - mirrors zoxide's `z`/`zi` with `s`/`si`
 
-Perfect for when you need to work across multiple repos with synchronized branches and unified git operations.
+Perfect for when you need clean, isolated workspaces without the complexity.
 
 ## Installation
 
 ### Prerequisites
 
-- [zoxide](https://github.com/ajeetdsouza/zoxide) - For intelligent directory tracking
-- [fzf](https://github.com/junegunn/fzf) - For fuzzy finding and multi-select
-- [gum](https://github.com/charmbracelet/gum) - For beautiful terminal UI
-- [direnv](https://direnv.net/) - (Optional) For automatic environment loading
-- [git](https://git-scm.com/) - For git integration features
-- [bats-core](https://github.com/bats-core/bats-core) - (Optional) For running tests
+- [Go](https://golang.org/) 1.21+ (for building from source)
+- [zoxide](https://github.com/ajeetdsouza/zoxide) - Directory jumping
+- [fzf](https://github.com/junegunn/fzf) - Fuzzy finding
+- [git](https://git-scm.com/) - Version control
+- [direnv](https://direnv.net/) - (Optional) Auto-load environments
 
-### Install sesh
+### Install from source
 
 ```bash
-# Using task (recommended - installs binary + zsh completion)
+# Clone the repository
+git clone https://github.com/roshbhatia/sesh
+cd sesh
+
+# Build and install
 task install
 
 # Or manually
-cp sesh ~/bin/sesh
+go build -o ~/bin/sesh .
 chmod +x ~/bin/sesh
-
-# Install zsh completion (optional)
-mkdir -p ~/.local/share/zsh/site-functions
-cp _sesh ~/.local/share/zsh/site-functions/_sesh
 
 # Make sure ~/bin is in your PATH
 export PATH="$HOME/bin:$PATH"
-
-# For completions, ensure your .zshrc has (if not already present):
-fpath=(~/.local/share/zsh/site-functions $fpath)
-autoload -Uz compinit && compinit
 ```
-
-After installation, restart your shell or run `exec zsh` for completions to take effect.
 
 ## Shell Integration
 
-Add this to your `.zshrc` for the best experience:
+Add this to your `.zshrc`:
 
 ```bash
 eval "$(sesh init zsh)"
 ```
 
 This provides:
-- `s <session>` - Quick navigate to any session
-- `si` - Interactive session selector with preview
-- Tab completion for all commands and session names
+- `s <session>` - Jump to any session instantly
+- `si` - Interactive session selector with fzf
+- Tab completion for all commands
+
+After adding, restart your shell: `exec zsh`
+
+## Quick Start
+
+```bash
+# Create a new session
+sesh new platform-work
+
+# This will:
+# 1. Prompt you to select repos from zoxide (Space to select, Enter to confirm)
+# 2. Create git worktrees as <repo>-<session>/
+# 3. Generate a shell.nix template
+
+# Navigate to it
+s platform-work
+
+# Or use interactive selector
+si
+
+# List all sessions
+sesh list
+
+# Delete when done
+sesh delete platform-work
+```
 
 ## Usage
 
-### Interactive Mode
-
-Just run `sesh` to get an interactive menu:
+### Create a session
 
 ```bash
-sesh
-```
-
-### Create a new session
-
-```bash
-# Interactive creation
 sesh new my-project
-
-# With description
-sesh new my-project "Platform composition v2 work"
 ```
 
-This will:
-1. Prompt for a description (if not provided)
-2. Show a filterable list of directories from zoxide
-3. Let you select multiple repos (Space to select, Enter to confirm)
-4. Create symlinks organized by `org-name/repo-name`
+Select repositories from your zoxide history using fzf (multi-select with Space).
+
+**What gets created:**
+```
+~/.local/state/sesh/sessions/my-project/
+├── shell.nix
+├── composition-runtime-my-project/  # Git worktree
+└── provider-metadata-my-project/    # Git worktree
+```
+
+### Navigate to sessions
+
+```bash
+# Direct navigation
+s my-project
+
+# Interactive selection
+si
+```
 
 ### List sessions
 
 ```bash
 sesh list
+# or
+sesh ls
 ```
 
-Shows all sessions with descriptions and repo counts.
+Shows all sessions with repo counts and last modified times.
 
-### Access a session
-
-```bash
-# Print session path
-sesh my-project
-
-# Change into session directory
-cd "$(sesh my-project)"
-
-# Or use in scripts
-SESSION_PATH=$(sesh my-project)
-```
-
-### Manage repos in a session
+### Delete a session
 
 ```bash
-# Add more repos to existing session
-sesh add my-project
-
-# Remove repos from session
-sesh remove my-project
-```
-
-### Manage sessions
-
-```bash
-# Rename a session
-sesh rename old-name new-name
-
-# Update session description
-sesh describe my-project "Updated description here"
-
-# Show current description
-sesh describe my-project
-
-# Delete a session
 sesh delete my-project
+# or
+sesh rm my-project
 ```
 
-## Git Integration
+Automatically cleans up all git worktrees.
 
-Work with git across all repos in a session simultaneously.
+## Session Structure
 
-### Check status across all repos
+Sessions use a simplified flat structure:
+
+```
+~/.local/state/sesh/sessions/
+└── platform-v2/
+    ├── shell.nix                          # Nix environment
+    ├── composition-runtime-platform-v2/   # Git worktree
+    └── provider-metadata-platform-v2/     # Git worktree
+```
+
+**Key design choices:**
+- Session name is the description (no separate metadata)
+- Worktrees named `<repo-basename>-<session-name>`
+- Only `shell.nix` for configuration
+- No org/repo nesting - flat and simple
+
+## Git Worktrees
+
+For git repositories, sesh creates worktrees instead of symlinks. This means:
+
+✓ **Parallel development** - Work on multiple branches simultaneously  
+✓ **Independent state** - Each session has its own working directory  
+✓ **Shared history** - All worktrees share the same git history  
+✓ **Clean isolation** - No stashing or branch switching needed
+
+**Example workflow:**
 
 ```bash
-sesh status my-project
+# Main work
+sesh new platform-main
+s platform-main
+# Work on main/master branch
 
-# Shows:
-# - Current branch for each repo
-# - Modified/staged/untracked files
-# - Commits ahead/behind remote
+# Experiment in parallel
+sesh new platform-experiment
+s platform-experiment
+# Work on experimental features
+
+# Both sessions are independent
+# Delete experiment when done
+sesh rm platform-experiment
 ```
 
-### Sync all repos
+## Environment Variables
+
+### `_SESH_FZF_OPTS`
+
+Customize fzf behavior (mirrors zoxide's `_ZO_FZF_OPTS`):
 
 ```bash
-# Pull all repos (skips repos with uncommitted changes)
-sesh sync my-project
-
-# Fetch only (no pull)
-sesh sync my-project --fetch
+export _SESH_FZF_OPTS="--height 60% --border --preview 'ls -la {}'"
 ```
 
-### Branch management
+### `XDG_STATE_HOME`
+
+Override default state directory:
 
 ```bash
-# Create/switch to branch in all repos
-sesh branch my-project feature-x
-
-# Show current branches
-sesh branch my-project --status
-
-# Create isolated worktree session (for parallel feature work)
-sesh branch my-project feature-y --worktree
-# This creates "my-project-feature-y" session with git worktrees
-# Work on feature-y without affecting your main workspace
+export XDG_STATE_HOME="$HOME/.local/state"  # Default
 ```
 
-### Execute commands across all repos
+Sessions stored in: `$XDG_STATE_HOME/sesh/sessions/`
+
+## Nix Integration
+
+Each session includes a `shell.nix` template:
+
+```nix
+{ pkgs ? import <nixpkgs> {} }:
+
+pkgs.mkShell {
+  buildInputs = with pkgs; [
+    git
+    # Add your development tools:
+    # nodejs
+    # go
+    # python3
+  ];
+  
+  shellHook = ''
+    echo "Session: $(basename $PWD)"
+  '';
+}
+```
+
+**Usage with direnv:**
 
 ```bash
-# Run any command in all repos
-sesh exec my-project git fetch
-sesh exec my-project git log -1
-sesh exec my-project npm install
-
-# Commands run in each repo directory
-# Exit codes are aggregated
+cd $(sesh path my-session)
+echo "use nix" > .envrc
+direnv allow
+# Environment auto-loads when you cd into session
 ```
 
-## Directory Structure
+## Commands
 
-Sessions are stored in `$XDG_STATE_HOME/sesh/` (defaults to `~/.local/state/sesh/`):
+| Command | Description |
+|---------|-------------|
+| `sesh new <name>` | Create a new session |
+| `sesh list` or `sesh ls` | List all sessions |
+| `sesh delete <name>` | Delete a session |
+| `sesh path <name>` | Print session path |
+| `sesh select` | Interactive session picker |
+| `sesh init zsh` | Output shell integration |
+| `sesh --version` | Show version |
+| `sesh --help` | Show help |
 
+**Shell functions (after `eval "$(sesh init zsh)"`):**
+
+| Function | Description |
+|----------|-------------|
+| `s <name>` | Navigate to session |
+| `si` | Interactive session selector |
+
+## Development
+
+### Build from source
+
+```bash
+# Run tests
+task test
+
+# Build binary
+task build
+
+# Install locally
+task install
+
+# Development cycle
+task dev
+
+# Clean build artifacts
+task clean
+
+# Check dependencies
+task check
 ```
-~/.local/state/sesh/
-├── my-project/
-│   ├── .sesh-desc              # Session description
-│   ├── .envrc                  # Direnv config (use nix)
-│   ├── shell.nix               # Nix shell environment
-│   ├── nike-runtime-foundation/
-│   │   ├── composition-runtime@ -> /path/to/repo
-│   │   └── provider-metadata@ -> /path/to/repo
-│   └── rbha18_nike/
-│       └── sysinit@ -> /path/to/repo
+
+### Run tests
+
+```bash
+# All tests with verbose output
+task test
+
+# Quick test run
+task test-short
+
+# Coverage report
+task test-coverage
 ```
+
+## Migration from v2.x (bash version)
+
+sesh v3.0 is a complete rewrite with breaking changes:
+
+**What changed:**
+- Written in Go (was bash)
+- Simplified session structure (no org/repo nesting)
+- Removed: `describe`, `rename`, `add`, `remove`, `branch`, `status`, `sync`, `exec`
+- Worktrees named `<repo>-<session>` (not nested under org/)
+- Session name is the description (no `.sesh-desc` file)
+
+**Migration steps:**
+1. Sessions are not compatible - you'll need to recreate them
+2. Update your `.zshrc`: `eval "$(sesh init zsh)"`
+3. Install the new binary: `task install`
+
+**Philosophy:**
+v3 focuses on the core workflow: create sessions, manage worktrees, jump between them. Everything else is left to standard git commands.
 
 ## Examples
 
-### Multi-repo development workflow
+### Multi-repo project
 
 ```bash
-# Create a session for platform work
-sesh new platform "NRF platform composition work"
-# Select: composition-runtime, provider-metadata, nrf-core-components
+# Create session for platform work
+sesh new platform-v2
+# Select: composition-runtime, provider-metadata, nrf-core
 
-# Access the session
-cd "$(sesh platform)"
-# Or with shell integration: s platform
+# Navigate
+s platform-v2
 
-# Open in editor with all repos accessible
+# Open in editor
 code .
 
-# Check git status across all repos
-sesh status platform
-
-# Create feature branch in all repos
-sesh branch platform feature-auth-improvements
-
-# Work on your changes...
-
-# Sync all repos
-sesh sync platform
-
-# Need to experiment? Create a worktree session
-sesh branch platform experimental-refactor --worktree
-s platform-experimental-refactor
-# Work independently, delete when done
-
-# Clean up
-sesh delete platform-experimental-refactor  # Cleans up worktrees automatically
+# Each repo is a worktree named:
+# - composition-runtime-platform-v2/
+# - provider-metadata-platform-v2/
+# - nrf-core-platform-v2/
 ```
 
 ### Parallel feature development
 
 ```bash
-# Main work in original session
-cd "$(sesh platform)"
-# On feature-a branch
+# Main feature work
+sesh new auth-v1
+s auth-v1
 
-# Need to work on feature-b without stashing?
-sesh branch platform feature-b --worktree
+# Need to prototype something else?
+sesh new auth-v2-experiment
+s auth-v2-experiment
 
-# Now you have two independent sessions:
-s platform            # Working on feature-a
-s platform-feature-b  # Working on feature-b
-
-# Both sessions share git history but have independent working trees
+# Both sessions are independent
+# Delete experiment when done
+sesh rm auth-v2-experiment
 ```
 
-### Shell integration
-
-Add to your `.zshrc` or `.bashrc` for quick access:
+### With tmux
 
 ```bash
-# Already provided by: eval "$(sesh init zsh)"
-# This gives you:
-# - s <session>  : Quick cd to session
-# - si           : Interactive selector
-# - Tab completion everywhere
-```
-
-Example usage with shell integration:
-
-```bash
-# Navigate to session
-s my-project
-
-# Interactive picker
-si
-
-# All sesh commands have completion
-sesh branch <TAB>     # Shows session names
-sesh status <TAB>     # Shows session names
-```
-
-### Use with tmux/zellij
-
-```bash
-# Open tmux session in sesh workspace
-tmux new-session -s my-project -c "$(sesh my-project)"
+# Create tmux session in sesh workspace
+tmux new-session -s platform -c "$(sesh path platform-v2)"
 
 # Or with shell integration
-tmux new-session -s my-project -c "$(s my-project)"
+tmux new-session -s platform -c "$(s platform-v2 && pwd)"
 ```
 
-## Development
+## Why the rewrite?
 
-```bash
-# Check dependencies
-task check
+**v2.x problems:**
+- 1300 lines of bash
+- Complex org/repo nesting
+- Too many commands (describe, rename, add, remove, etc.)
+- Multi-repo git operations were overkill
 
-# Run tests (requires bats-core)
-task test
+**v3.0 benefits:**
+- ~500 lines of Go (more maintainable)
+- Flat, simple structure
+- Focused on core workflow
+- Fast binary (no bash subshells)
+- Better error handling
+- Comprehensive test suite
 
-# Install bats on macOS
-brew install bats-core
+## Comparison with other tools
 
-# Install locally
-task install
+| Feature | sesh | tmux | zoxide | tmux-sessionizer |
+|---------|------|------|--------|------------------|
+| Git worktrees | ✓ | - | - | - |
+| Session management | ✓ | ✓ | - | ✓ |
+| Nix integration | ✓ | - | - | - |
+| Fast directory jumping | ✓ | - | ✓ | - |
+| Multi-repo workflows | ✓ | - | - | - |
 
-# Clean up test sessions
-task clean
-```
-
-## Why sesh?
-
-- **Focused workspaces**: Group related repos without cluttering your main directories
-- **Fast navigation**: Jump to multi-repo workspaces instantly with `s` command
-- **Git integration**: Manage branches, sync repos, check status across all repos at once
-- **Worktree support**: Work on multiple branches in parallel without stashing
-- **Nix integration**: Each session has pre-configured shell.nix with common stacks
-- **Organized**: Repos are symlinked with `org/repo` structure for clarity
-- **zoxide-powered**: Leverages your existing directory history
-- **Beautiful UI**: Uses gum for polished terminal interactions
-- **Shell integration**: Natural `s` and `si` commands with completion
+sesh complements tmux/zellij (not a replacement) - use them together!
 
 ## Tips
 
-1. **Use with direnv**: Run `direnv allow` in your session directory to auto-load the Nix environment
-2. **Customize shell.nix**: Edit the generated shell.nix and uncomment the stacks you need (Go, Node, Python, Rust, etc.)
-3. **Session naming**: Use descriptive names like `platform-v2`, `experiments`, `client-work`
-4. **Worktrees for experiments**: Use `--worktree` flag when you want to experiment without affecting your main work
-5. **Regular cleanup**: Delete worktree sessions when done to keep things tidy
-6. **Git workflows**: Use `sesh branch` to synchronize branch changes across all repos in a session
+1. **Use descriptive session names**: `platform-auth-v2` better than `temp-work`
+2. **Leverage direnv**: Auto-load Nix environments with `direnv allow`
+3. **Clean up experiments**: Delete experimental sessions when done
+4. **Combine with tmux**: Create tmux sessions inside sesh sessions
+5. **One session per feature**: Keep sessions focused on specific work
 
 ## License
 
 MIT
+
+## Credits
+
+Inspired by:
+- [zoxide](https://github.com/ajeetdsouza/zoxide) - For the elegant UX patterns
+- [tmux-sessionizer](https://github.com/joshmedeski/t-smart-tmux-session-manager) - For session management ideas
