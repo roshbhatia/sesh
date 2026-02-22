@@ -53,7 +53,7 @@ func TestGetRepoBasename(t *testing.T) {
 
 func setupTestGitRepo(t *testing.T, dir string) {
 	t.Helper()
-	
+
 	// Initialize git repo
 	cmd := exec.Command("git", "init", dir)
 	if err := cmd.Run(); err != nil {
@@ -105,7 +105,7 @@ func TestIsGitRepo(t *testing.T) {
 
 func TestCreateWorktree(t *testing.T) {
 	tmpDir := t.TempDir()
-	
+
 	// Create a test git repo
 	repoDir := filepath.Join(tmpDir, "testrepo")
 	setupTestGitRepo(t, repoDir)
@@ -224,4 +224,90 @@ func TestCleanupWorktrees(t *testing.T) {
 		// This is a basic check; a more robust check would parse the output
 		t.Logf("Worktree list after cleanup: %s", output)
 	}
+}
+
+func TestCreateWithAgentsMd(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create a test git repo
+	repoDir := filepath.Join(tmpDir, "testrepo")
+	setupTestGitRepo(t, repoDir)
+
+	// Create session directory
+	sessionDir := filepath.Join(tmpDir, "sessions", "test-session")
+	if err := os.MkdirAll(sessionDir, 0755); err != nil {
+		t.Fatalf("Failed to create session dir: %v", err)
+	}
+
+	// Create session (which should create agents.md and shell.nix)
+	err := Create("test-session", []string{repoDir})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// Get actual session path
+	sessionPath, err := GetPath("test-session")
+	if err != nil {
+		t.Fatalf("GetPath failed: %v", err)
+	}
+
+	// Verify agents.md exists
+	agentsMdPath := filepath.Join(sessionPath, "agents.md")
+	if _, err := os.Stat(agentsMdPath); os.IsNotExist(err) {
+		t.Error("agents.md was not created in session")
+	}
+
+	// Verify shell.nix exists
+	shellNixPath := filepath.Join(sessionPath, "shell.nix")
+	if _, err := os.Stat(shellNixPath); os.IsNotExist(err) {
+		t.Error("shell.nix was not created in session")
+	}
+
+	// Verify agents.md has content
+	agentsContent, err := os.ReadFile(agentsMdPath)
+	if err != nil {
+		t.Fatalf("Failed to read agents.md: %v", err)
+	}
+	if len(agentsContent) == 0 {
+		t.Error("agents.md is empty")
+	}
+
+	// Verify shell.nix has content
+	shellContent, err := os.ReadFile(shellNixPath)
+	if err != nil {
+		t.Fatalf("Failed to read shell.nix: %v", err)
+	}
+	if len(shellContent) == 0 {
+		t.Error("shell.nix is empty")
+	}
+
+	// Verify agents.md has expected structure
+	agentsStr := string(agentsContent)
+	expectedSections := []string{
+		"Agents guidance",
+		"Use Nix",
+		"shell.nix",
+		"direnv",
+	}
+	for _, section := range expectedSections {
+		if !contains(agentsStr, section) {
+			t.Errorf("agents.md missing expected section: %q", section)
+		}
+	}
+}
+
+func contains(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		match := true
+		for j := 0; j < len(substr); j++ {
+			if s[i+j] != substr[j] {
+				match = false
+				break
+			}
+		}
+		if match {
+			return true
+		}
+	}
+	return false
 }

@@ -74,11 +74,11 @@ func runFZF(items []string, multiSelect bool, prompt string) ([]string, error) {
 	}
 
 	cmd := exec.Command("fzf", args...)
-	
+
 	// Prepare input
 	input := strings.Join(items, "\n")
 	cmd.Stdin = strings.NewReader(input)
-	
+
 	// Capture output
 	var outBuf bytes.Buffer
 	cmd.Stdout = &outBuf
