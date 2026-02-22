@@ -296,6 +296,54 @@ func TestCreateWithAgentsMd(t *testing.T) {
 	}
 }
 
+func TestAddRepos(t *testing.T) {
+	tmpDir := t.TempDir()
+
+	// Create two test git repos
+	repo1 := filepath.Join(tmpDir, "repo1")
+	setupTestGitRepo(t, repo1)
+
+	repo2 := filepath.Join(tmpDir, "repo2")
+	setupTestGitRepo(t, repo2)
+
+	// Create a session with first repo
+	err := Create("test-add-session", []string{repo1})
+	if err != nil {
+		t.Fatalf("Create failed: %v", err)
+	}
+
+	// Add second repo to session
+	err = AddRepos("test-add-session", []string{repo2})
+	if err != nil {
+		t.Fatalf("AddRepos failed: %v", err)
+	}
+
+	// Get session path
+	sessionPath, err := GetPath("test-add-session")
+	if err != nil {
+		t.Fatalf("GetPath failed: %v", err)
+	}
+
+	// Verify both worktrees exist
+	repo1Worktree := filepath.Join(sessionPath, "repo1-test-add-session")
+	if _, err := os.Stat(repo1Worktree); os.IsNotExist(err) {
+		t.Error("First repo worktree not found")
+	}
+
+	repo2Worktree := filepath.Join(sessionPath, "repo2-test-add-session")
+	if _, err := os.Stat(repo2Worktree); os.IsNotExist(err) {
+		t.Error("Second repo worktree not found after AddRepos")
+	}
+
+	// Verify both are valid git repos
+	if !IsGitRepo(repo1Worktree) {
+		t.Error("First worktree is not a git repo")
+	}
+	if !IsGitRepo(repo2Worktree) {
+		t.Error("Second worktree is not a git repo")
+	}
+}
+
 func contains(s, substr string) bool {
 	for i := 0; i <= len(s)-len(substr); i++ {
 		match := true

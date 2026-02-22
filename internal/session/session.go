@@ -154,6 +154,29 @@ func List() ([]Session, error) {
 	return sessions, nil
 }
 
+// AddRepos adds repositories to an existing session
+func AddRepos(name string, repoPaths []string) error {
+	sessionPath, err := GetPath(name)
+	if err != nil {
+		return err
+	}
+
+	// Add repos/worktrees
+	for _, repoPath := range repoPaths {
+		if IsGitRepo(repoPath) {
+			if _, err := CreateWorktree(repoPath, sessionPath, name); err != nil {
+				return fmt.Errorf("failed to create worktree for %s: %w", repoPath, err)
+			}
+		} else {
+			if _, err := CreateSymlink(repoPath, sessionPath); err != nil {
+				return fmt.Errorf("failed to create symlink for %s: %w", repoPath, err)
+			}
+		}
+	}
+
+	return nil
+}
+
 // Delete removes a session and cleans up worktrees
 func Delete(name string) error {
 	sessionPath, err := GetPath(name)

@@ -40,20 +40,21 @@ chmod +x ~/bin/sesh
 export PATH="$HOME/bin:$PATH"
 ```
 
-## Shell Integration
+## Basic Usage
 
-Add this to your `.zshrc`:
+Commands output paths that work with standard tools:
 
 ```bash
-eval "$(sesh init zsh)"
+# Get session path
+sesh path my-session
+# Output: ~/.local/state/sesh/sessions/my-session
+
+# Navigate to session
+cd $(sesh path my-session)
+
+# Interactive selection
+cd $(sesh select)  # Choose session with fzf
 ```
-
-This provides:
-- `s <session>` - Jump to any session instantly
-- `si` - Interactive session selector with fzf
-- Tab completion for all commands
-
-After adding, restart your shell: `exec zsh`
 
 ## Quick Start
 
@@ -61,16 +62,14 @@ After adding, restart your shell: `exec zsh`
 # Create a new session
 sesh new platform-work
 
-# This will:
-# 1. Prompt you to select repos from zoxide (Space to select, Enter to confirm)
-# 2. Create git worktrees as <repo>-<session>/
-# 3. Generate a shell.nix template
-
 # Navigate to it
-s platform-work
+cd $(sesh path platform-work)
 
-# Or use interactive selector
-si
+# Or use interactive selection
+cd $(sesh select)
+
+# Later, add more repos to the session
+sesh add platform-work
 
 # List all sessions
 sesh list
@@ -228,20 +227,13 @@ direnv allow
 | Command | Description |
 |---------|-------------|
 | `sesh new <name>` | Create a new session |
+| `sesh add <name>` | Add repositories to existing session |
 | `sesh list` or `sesh ls` | List all sessions |
 | `sesh delete <name>` | Delete a session |
 | `sesh path <name>` | Print session path |
-| `sesh select` | Interactive session picker |
-| `sesh init zsh` | Output shell integration |
+| `sesh select` | Interactive session picker (outputs path) |
 | `sesh --version` | Show version |
 | `sesh --help` | Show help |
-
-**Shell functions (after `eval "$(sesh init zsh)"`):**
-
-| Function | Description |
-|----------|-------------|
-| `s <name>` | Navigate to session |
-| `si` | Interactive session selector |
 
 ## Development
 
@@ -306,13 +298,14 @@ v3 focuses on the core workflow: create sessions, manage worktrees, jump between
 ```bash
 # Create session for platform work
 sesh new platform-v2
-# Select: composition-runtime, provider-metadata, nrf-core
+# Select: composition-runtime, provider-metadata
 
 # Navigate
-s platform-v2
+cd $(sesh path platform-v2)
 
-# Open in editor
-code .
+# Later, add another repo
+sesh add platform-v2
+# Select: nrf-core
 
 # Each repo is a worktree named:
 # - composition-runtime-platform-v2/
@@ -325,15 +318,15 @@ code .
 ```bash
 # Main feature work
 sesh new auth-v1
-s auth-v1
+cd $(sesh path auth-v1)
 
 # Need to prototype something else?
 sesh new auth-v2-experiment
-s auth-v2-experiment
+cd $(sesh path auth-v2-experiment)
 
 # Both sessions are independent
 # Delete experiment when done
-sesh rm auth-v2-experiment
+sesh delete auth-v2-experiment
 ```
 
 ### With tmux
@@ -341,9 +334,6 @@ sesh rm auth-v2-experiment
 ```bash
 # Create tmux session in sesh workspace
 tmux new-session -s platform -c "$(sesh path platform-v2)"
-
-# Or with shell integration
-tmux new-session -s platform -c "$(s platform-v2 && pwd)"
 ```
 
 ## Why the rewrite?
