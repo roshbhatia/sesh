@@ -40,21 +40,6 @@ chmod +x ~/bin/sesh
 export PATH="$HOME/bin:$PATH"
 ```
 
-## Shell Integration
-
-Add this to your `.zshrc`:
-
-```bash
-eval "$(sesh init zsh)"
-```
-
-This provides:
-- `s <session>` - Jump to any session instantly
-- `si` - Interactive session selector with fzf
-- Tab completion for all commands
-
-After adding, restart your shell: `exec zsh`
-
 ## Quick Start
 
 ```bash
@@ -232,16 +217,8 @@ direnv allow
 | `sesh delete <name>` | Delete a session |
 | `sesh path <name>` | Print session path |
 | `sesh select` | Interactive session picker |
-| `sesh init zsh` | Output shell integration |
 | `sesh --version` | Show version |
 | `sesh --help` | Show help |
-
-**Shell functions (after `eval "$(sesh init zsh)"`):**
-
-| Function | Description |
-|----------|-------------|
-| `s <name>` | Navigate to session |
-| `si` | Interactive session selector |
 
 ## Development
 
@@ -293,7 +270,7 @@ sesh v3.0 is a complete rewrite with breaking changes:
 
 **Migration steps:**
 1. Sessions are not compatible - you'll need to recreate them
-2. Update your `.zshrc`: `eval "$(sesh init zsh)"`
+2. Update any scripts/aliases that depended on v2 behavior
 3. Install the new binary: `task install`
 
 **Philosophy:**
@@ -341,9 +318,6 @@ sesh rm auth-v2-experiment
 ```bash
 # Create tmux session in sesh workspace
 tmux new-session -s platform -c "$(sesh path platform-v2)"
-
-# Or with shell integration
-tmux new-session -s platform -c "$(s platform-v2 && pwd)"
 ```
 
 ## Why the rewrite?

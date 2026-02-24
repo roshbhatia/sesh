@@ -1,9 +1,7 @@
-version: '3'
-
+version: "3"
 vars:
   BINARY_NAME: sesh
   INSTALL_DIR: '{{.HOME}}/bin'
-
 tasks:
   build:
     desc: Build sesh binary
@@ -16,7 +14,6 @@ tasks:
       - go.sum
     generates:
       - bin/{{.BINARY_NAME}}
-
   install:
     desc: Install sesh to ~/bin
     deps:
@@ -26,66 +23,51 @@ tasks:
       - cp bin/{{.BINARY_NAME}} {{.INSTALL_DIR}}/{{.BINARY_NAME}}
       - chmod +x {{.INSTALL_DIR}}/{{.BINARY_NAME}}
       - echo "Installed sesh to {{.INSTALL_DIR}}/{{.BINARY_NAME}}"
-      - echo ""
-      - echo "Add to your .zshrc"
-      - echo '  eval "$(sesh init zsh)"'
-      - echo ""
-      - echo "Then restart your shell"
-
   uninstall:
     desc: Uninstall sesh from ~/bin
     cmds:
       - rm -f {{.INSTALL_DIR}}/{{.BINARY_NAME}}
       - echo "Uninstalled sesh"
-
   test:
     desc: Run all tests
     cmds:
       - go test ./... -v
-
   test-short:
     desc: Run tests without verbose output
     cmds:
       - go test ./...
-
   test-coverage:
     desc: Run tests with coverage
     cmds:
       - go test ./... -coverprofile=coverage.out
       - go tool cover -html=coverage.out -o coverage.html
       - echo "Coverage report generated at coverage.html"
-
   lint:
     desc: Run linter (requires golangci-lint)
     cmds:
       - golangci-lint run
-
   fmt:
     desc: Format Go code
     cmds:
       - go fmt ./...
       - gofmt -s -w .
-
   clean:
     desc: Clean build artifacts
     cmds:
       - rm -rf bin/
       - rm -f coverage.out coverage.html
       - echo "Cleaned build artifacts"
-
   clean-sessions:
     desc: Clean up all sessions
     cmds:
       - rm -rf "$${XDG_STATE_HOME:-$$HOME/.local/state}/sesh"
       - echo "Cleaned up all sessions"
-
   dev:
     desc: Build and install for development
     cmds:
       - task: build
       - task: test-short
       - task: install
-
   check:
     desc: Check if required dependencies are installed
     cmds:
@@ -97,7 +79,6 @@ tasks:
         command -v git >/dev/null 2>&1 && echo "git installed" || echo "git not found"
         echo ""
         go version
-
   default:
     desc: Show available tasks
     cmds:

@@ -49,11 +49,11 @@ var newCmd = &cobra.Command{
 
 		// Get session path to display
 		sessionPath, _ := session.GetPath(name)
-		
+
 		fmt.Printf("\n✓ Created session '%s'\n", name)
 		fmt.Printf("  Path: %s\n", sessionPath)
 		fmt.Printf("  Repos: %d\n", len(repos))
-		fmt.Printf("\nNavigate with: s %s\n", name)
+		fmt.Printf("\nNavigate with: cd %s\n", name)
 
 		return nil
 	},
