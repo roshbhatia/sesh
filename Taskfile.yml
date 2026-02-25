@@ -75,7 +75,6 @@ tasks:
         echo "Checking dependencies..."
         command -v go >/dev/null 2>&1 && echo "go installed" || echo "go not found"
         command -v zoxide >/dev/null 2>&1 && echo "zoxide installed" || echo "zoxide not found"
-        command -v fzf >/dev/null 2>&1 && echo "fzf installed" || echo "fzf not found"
         command -v git >/dev/null 2>&1 && echo "git installed" || echo "git not found"
         echo ""
         go version

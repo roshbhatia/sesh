@@ -2,8 +2,10 @@ package cmd
 
 import (
 	"fmt"
+	"os/exec"
+	"strings"
 
-	"github.com/roshbhatia/sesh/internal/fzf"
+	"github.com/roshbhatia/sesh/internal/picker"
 	"github.com/roshbhatia/sesh/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -16,24 +18,20 @@ var newCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
-		// Check dependencies first
-		if err := fzf.CheckDependencies(); err != nil {
-			return err
-		}
-
-		// Validate session name
 		if err := session.ValidateSessionName(name); err != nil {
 			return err
 		}
 
-		// Check if session already exists
 		if session.Exists(name) {
 			return fmt.Errorf("session '%s' already exists", name)
 		}
 
-		// Select repos using fzf
-		fmt.Println("Select repositories (Space to select, Enter to confirm)...")
-		repos, err := fzf.SelectRepos()
+		dirs, err := zoxideDirs()
+		if err != nil {
+			return err
+		}
+
+		repos, err := picker.SelectMany("Select repositories", dirs)
 		if err != nil {
 			return fmt.Errorf("failed to select repositories: %w", err)
 		}
@@ -42,21 +40,29 @@ var newCmd = &cobra.Command{
 			return fmt.Errorf("no repositories selected")
 		}
 
-		// Create the session
 		if err := session.Create(name, repos); err != nil {
 			return fmt.Errorf("failed to create session: %w", err)
 		}
 
-		// Get session path to display
 		sessionPath, _ := session.GetPath(name)
-
-		fmt.Printf("\n✓ Created session '%s'\n", name)
+		fmt.Printf("Created session '%s'\n", name)
 		fmt.Printf("  Path: %s\n", sessionPath)
 		fmt.Printf("  Repos: %d\n", len(repos))
-		fmt.Printf("\nNavigate with: cd %s\n", sessionPath)
 
 		return nil
 	},
+}
+
+func zoxideDirs() ([]string, error) {
+	out, err := exec.Command("zoxide", "query", "--list").Output()
+	if err != nil {
+		return nil, fmt.Errorf("failed to query zoxide: %w", err)
+	}
+	dirs := strings.Split(strings.TrimSpace(string(out)), "\n")
+	if len(dirs) == 0 || (len(dirs) == 1 && dirs[0] == "") {
+		return nil, fmt.Errorf("no directories found in zoxide database")
+	}
+	return dirs, nil
 }
 
 func init() {

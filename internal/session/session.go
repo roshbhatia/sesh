@@ -6,9 +6,7 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/roshbhatia/sesh/internal/agents"
 	"github.com/roshbhatia/sesh/internal/config"
-	"github.com/roshbhatia/sesh/internal/shellnix"
 )
 
 // Session represents a sesh session
@@ -74,19 +72,6 @@ func Create(name string, repoPaths []string) error {
 		return fmt.Errorf("failed to create session directory: %w", err)
 	}
 
-	// Create shell.nix
-	if err := shellnix.WriteTemplate(sessionPath); err != nil {
-		return fmt.Errorf("failed to create shell.nix: %w", err)
-	}
-
-	// Create agents.md in repo root if it doesn't exist
-	agentsMdPath := filepath.Join(sessionPath, "agents.md")
-	if _, err := os.Stat(agentsMdPath); os.IsNotExist(err) {
-		if err := agents.WriteTemplate(sessionPath); err != nil {
-			return fmt.Errorf("failed to create agents.md: %w", err)
-		}
-	}
-
 	// Add repos/worktrees
 	for _, repoPath := range repoPaths {
 		if IsGitRepo(repoPath) {
@@ -132,15 +117,10 @@ func List() ([]Session, error) {
 			continue
 		}
 
-		// Count repos (directories and symlinks, excluding shell.nix)
 		repoCount := 0
 		sessionEntries, err := os.ReadDir(sessionPath)
 		if err == nil {
-			for _, se := range sessionEntries {
-				if se.Name() != "shell.nix" && se.Name() != ".envrc" {
-					repoCount++
-				}
-			}
+			repoCount = len(sessionEntries)
 		}
 
 		sessions = append(sessions, Session{

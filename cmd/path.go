@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/roshbhatia/sesh/internal/fzf"
+	"github.com/roshbhatia/sesh/internal/picker"
 	"github.com/roshbhatia/sesh/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -31,12 +31,6 @@ var selectCmd = &cobra.Command{
 	Short: "Interactively select session path",
 	Long:  `Interactively select a session and print its path.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Check dependencies
-		if err := fzf.CheckDependencies(); err != nil {
-			return err
-		}
-
-		// Get all sessions
 		sessions, err := session.List()
 		if err != nil {
 			return fmt.Errorf("failed to list sessions: %w", err)
@@ -46,19 +40,16 @@ var selectCmd = &cobra.Command{
 			return fmt.Errorf("no sessions found")
 		}
 
-		// Extract session names
 		names := make([]string, len(sessions))
 		for i, s := range sessions {
 			names[i] = s.Name
 		}
 
-		// Select session with fzf
-		selected, err := fzf.SelectSession(names)
+		selected, err := picker.SelectOne("Select session", names)
 		if err != nil {
 			return err
 		}
 
-		// Print path to selected session
 		path, err := session.GetPath(selected)
 		if err != nil {
 			return err

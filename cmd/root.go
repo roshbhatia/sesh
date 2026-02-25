@@ -3,7 +3,7 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/roshbhatia/sesh/internal/fzf"
+	"github.com/roshbhatia/sesh/internal/picker"
 	"github.com/roshbhatia/sesh/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -13,13 +13,9 @@ const version = "3.0.0"
 var rootCmd = &cobra.Command{
 	Use:   "sesh",
 	Short: "Multi-repo session manager with git worktree support",
-	Long: `sesh - A streamlined session manager for developers.
-
-Create isolated workspaces with git worktrees and shell.nix environments.
-Mirrors zoxide's elegant UX with 's' and 'si' commands.`,
+	Long:  `sesh - A streamlined session manager for developers.`,
 	Version: version,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// If no arguments provided, run interactive selector
 		if len(args) == 0 {
 			sessions, err := session.List()
 			if err != nil {
@@ -31,23 +27,16 @@ Mirrors zoxide's elegant UX with 's' and 'si' commands.`,
 				return nil
 			}
 
-			// Extract session names
 			names := make([]string, len(sessions))
 			for i, s := range sessions {
 				names[i] = s.Name
 			}
 
-			// Show interactive selector
-			selected, err := fzf.SelectSession(names)
+			selected, err := picker.SelectOne("Select session", names)
 			if err != nil {
 				return fmt.Errorf("selection failed: %w", err)
 			}
 
-			if selected == "" {
-				return nil
-			}
-
-			// Print path to selected session
 			path, err := session.GetPath(selected)
 			if err != nil {
 				return fmt.Errorf("failed to get session path: %w", err)
