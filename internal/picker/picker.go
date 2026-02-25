@@ -3,6 +3,7 @@ package picker
 import (
 	"fmt"
 	"io"
+	"os"
 	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
@@ -14,6 +15,7 @@ var (
 	titleStyle        = lipgloss.NewStyle().MarginLeft(2)
 	itemStyle         = lipgloss.NewStyle().PaddingLeft(4)
 	selectedItemStyle = lipgloss.NewStyle().PaddingLeft(2).Foreground(lipgloss.Color("170"))
+	checkedItemStyle  = lipgloss.NewStyle().PaddingLeft(4).Foreground(lipgloss.Color("40"))
 	paginationStyle   = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
 	helpStyle         = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
 )
@@ -41,6 +43,41 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 		}
 	}
 	fmt.Fprint(w, fn(i.value))
+}
+
+// multiItemDelegate renders items with checked/unchecked indicators.
+type multiItemDelegate struct {
+	checked map[int]bool
+}
+
+func (d multiItemDelegate) Height() int                             { return 1 }
+func (d multiItemDelegate) Spacing() int                            { return 0 }
+func (d multiItemDelegate) Update(_ tea.Msg, _ *list.Model) tea.Cmd { return nil }
+func (d multiItemDelegate) Render(w io.Writer, m list.Model, index int, listItem list.Item) {
+	i, ok := listItem.(item)
+	if !ok {
+		return
+	}
+
+	isChecked := d.checked[index]
+	isCursor := index == m.Index()
+
+	var prefix string
+	if isChecked {
+		prefix = "◉ "
+	} else {
+		prefix = "○ "
+	}
+
+	var rendered string
+	if isCursor {
+		rendered = selectedItemStyle.Render("> " + prefix + i.value)
+	} else if isChecked {
+		rendered = checkedItemStyle.Render(prefix + i.value)
+	} else {
+		rendered = itemStyle.Render(prefix + i.value)
+	}
+	fmt.Fprint(w, rendered)
 }
 
 // single-select model
@@ -105,6 +142,7 @@ func (m multiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			} else {
 				m.selected[idx] = true
 			}
+			m.list.SetDelegate(multiItemDelegate{checked: m.selected})
 			return m, nil
 		case "enter":
 			return m, tea.Quit
@@ -116,7 +154,6 @@ func (m multiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m multiModel) View() string {
-	// Mark selected items visually in the title area
 	count := len(m.selected)
 	title := m.list.Title
 	if count > 0 {
@@ -146,7 +183,7 @@ func SelectOne(prompt string, items []string) (string, error) {
 	l.Styles.HelpStyle = helpStyle
 
 	m := singleModel{list: l}
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	result, err := p.Run()
 	if err != nil {
 		return "", fmt.Errorf("picker failed: %w", err)
@@ -170,7 +207,8 @@ func SelectMany(prompt string, items []string) ([]string, error) {
 		listItems[i] = item{value: s}
 	}
 
-	l := list.New(listItems, itemDelegate{}, 0, min(len(items)+4, 20))
+	checked := make(map[int]bool)
+	l := list.New(listItems, multiItemDelegate{checked: checked}, 0, min(len(items)+4, 20))
 	l.Title = prompt + " (Space to toggle, Enter to confirm)"
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(true)
@@ -180,10 +218,10 @@ func SelectMany(prompt string, items []string) ([]string, error) {
 
 	m := multiModel{
 		list:     l,
-		selected: make(map[int]bool),
+		selected: checked,
 		items:    items,
 	}
-	p := tea.NewProgram(m)
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	result, err := p.Run()
 	if err != nil {
 		return nil, fmt.Errorf("picker failed: %w", err)

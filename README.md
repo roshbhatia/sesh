@@ -17,15 +17,12 @@ Perfect for when you need clean, isolated workspaces without the complexity.
 ### Prerequisites
 
 - [Go](https://golang.org/) 1.21+ (for building from source)
-- [zoxide](https://github.com/ajeetdsouza/zoxide) - Directory jumping
-- [fzf](https://github.com/junegunn/fzf) - Fuzzy finding
 - [git](https://git-scm.com/) - Version control
 - [direnv](https://direnv.net/) - (Optional) Auto-load environments
 
 ### Install from source
 
 ```bash
-# Clone the repository
 git clone https://github.com/roshbhatia/sesh
 cd sesh
 
@@ -40,52 +37,53 @@ chmod +x ~/bin/sesh
 export PATH="$HOME/bin:$PATH"
 ```
 
-<<<<<<< HEAD
-||||||| 86075c4
 ## Shell Integration
 
-Add this to your `.zshrc`:
+Add these functions to your `.zshrc` (or `.bashrc`):
 
 ```bash
-eval "$(sesh init zsh)"
+# s <session> — jump directly to a session by name (greedy match)
+function s() {
+  local path
+  path=$(sesh --greedy "$1") || return 1
+  cd "$path"
+}
+
+# si — interactive session picker
+function si() {
+  local path
+  path=$(sesh) || return 1
+  cd "$path"
+}
 ```
 
-This provides:
-- `s <session>` - Jump to any session instantly
-- `si` - Interactive session selector with fzf
-- Tab completion for all commands
-
-After adding, restart your shell: `exec zsh`
-
-=======
-## Basic Usage
-
-Commands output paths that work with standard tools:
+After adding, restart your shell:
 
 ```bash
-# Get session path
-sesh path my-session
-# Output: ~/.local/state/sesh/sessions/my-session
-
-# Navigate to session
-cd $(sesh path my-session)
-
-# Interactive selection
-cd $(sesh select)  # Choose session with fzf
+exec zsh
 ```
 
->>>>>>> de993c44ab85ad681c125f44d66edc952926d9d9
+### Usage
+
+```bash
+# Jump to a session (greedy: exact, prefix, or substring match)
+s platform
+
+# Interactive picker
+si
+```
+
 ## Quick Start
 
 ```bash
 # Create a new session
 sesh new platform-work
 
-# Navigate to it
-cd $(sesh path platform-work)
+# Navigate to it (interactive picker)
+si
 
-# Or use interactive selection
-cd $(sesh select)
+# Or jump directly by name
+s platform-work
 
 # Later, add more repos to the session
 sesh add platform-work
@@ -105,7 +103,7 @@ sesh delete platform-work
 sesh new my-project
 ```
 
-Select repositories from your zoxide history using fzf (multi-select with Space).
+Select repositories from your zoxide history using the interactive picker (Space to toggle, Enter to confirm).
 
 **What gets created:**
 ```
@@ -118,11 +116,14 @@ Select repositories from your zoxide history using fzf (multi-select with Space)
 ### Navigate to sessions
 
 ```bash
-# Direct navigation
-s my-project
-
 # Interactive selection
 si
+
+# Direct navigation (greedy match)
+s my-project
+
+# Manual with path
+cd $(sesh path my-project)
 ```
 
 ### List sessions
@@ -192,14 +193,6 @@ sesh rm platform-experiment
 
 ## Environment Variables
 
-### `_SESH_FZF_OPTS`
-
-Customize fzf behavior (mirrors zoxide's `_ZO_FZF_OPTS`):
-
-```bash
-export _SESH_FZF_OPTS="--height 60% --border --preview 'ls -la {}'"
-```
-
 ### `XDG_STATE_HOME`
 
 Override default state directory:
@@ -250,14 +243,8 @@ direnv allow
 | `sesh list` or `sesh ls` | List all sessions |
 | `sesh delete <name>` | Delete a session |
 | `sesh path <name>` | Print session path |
-<<<<<<< HEAD
-| `sesh select` | Interactive session picker |
-||||||| 86075c4
-| `sesh select` | Interactive session picker |
-| `sesh init zsh` | Output shell integration |
-=======
 | `sesh select` | Interactive session picker (outputs path) |
->>>>>>> de993c44ab85ad681c125f44d66edc952926d9d9
+| `sesh --greedy <query>` | Fuzzy match session and print its path |
 | `sesh --version` | Show version |
 | `sesh --help` | Show help |
 
@@ -327,7 +314,7 @@ sesh new platform-v2
 # Select: composition-runtime, provider-metadata
 
 # Navigate
-cd $(sesh path platform-v2)
+s platform-v2
 
 # Later, add another repo
 sesh add platform-v2
@@ -344,11 +331,11 @@ sesh add platform-v2
 ```bash
 # Main feature work
 sesh new auth-v1
-cd $(sesh path auth-v1)
+s auth-v1
 
 # Need to prototype something else?
 sesh new auth-v2-experiment
-cd $(sesh path auth-v2-experiment)
+s auth-v2-experiment
 
 # Both sessions are independent
 # Delete experiment when done
