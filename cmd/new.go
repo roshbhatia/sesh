@@ -53,7 +53,7 @@ var newCmd = &cobra.Command{
 		fmt.Printf("\n✓ Created session '%s'\n", name)
 		fmt.Printf("  Path: %s\n", sessionPath)
 		fmt.Printf("  Repos: %d\n", len(repos))
-		fmt.Printf("\nNavigate with: cd %s\n", name)
+		fmt.Printf("\nNavigate with: cd %s\n", sessionPath)
 
 		return nil
 	},

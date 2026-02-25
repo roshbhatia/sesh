@@ -11,9 +11,9 @@ import (
 )
 
 var listCmd = &cobra.Command{
-	Use:   "list",
-	Short: "List all sessions",
-	Long:  `List all sessions with their repository counts and last modified times.`,
+	Use:     "list",
+	Short:   "List all sessions",
+	Long:    `List all sessions with their repository counts and last modified times.`,
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		sessions, err := session.List()
@@ -44,7 +44,7 @@ var listCmd = &cobra.Command{
 
 func formatRelativeTime(t time.Time) string {
 	duration := time.Since(t)
-	
+
 	switch {
 	case duration < time.Minute:
 		return "just now"

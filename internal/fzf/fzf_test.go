@@ -7,13 +7,13 @@ import (
 
 func TestCheckDependencies(t *testing.T) {
 	err := CheckDependencies()
-	
+
 	// Check if fzf exists
 	_, fzfErr := exec.LookPath("fzf")
-	
+
 	// Check if zoxide exists
 	_, zoxideErr := exec.LookPath("zoxide")
-	
+
 	if fzfErr != nil || zoxideErr != nil {
 		// If either is missing, we expect an error
 		if err == nil {

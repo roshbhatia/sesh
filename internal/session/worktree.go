@@ -75,7 +75,7 @@ func CleanupWorktrees(sessionPath string) error {
 		}
 
 		entryPath := filepath.Join(sessionPath, entry.Name())
-		
+
 		// Check if this is a git worktree
 		cmd := exec.Command("git", "-C", entryPath, "rev-parse", "--is-inside-work-tree")
 		if cmd.Run() != nil {
@@ -112,7 +112,7 @@ func GetWorktreeMainRepo(worktreePath string) (string, error) {
 		return "", fmt.Errorf("failed to get git common dir: %w", err)
 	}
 	gitCommonDir := strings.TrimSpace(string(output))
-	
+
 	// The main repo is the parent of the .git directory
 	mainRepoPath := filepath.Dir(gitCommonDir)
 	return mainRepoPath, nil
