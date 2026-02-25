@@ -29,19 +29,35 @@ tasks:
       - rm -f {{.INSTALL_DIR}}/{{.BINARY_NAME}}
       - echo "Uninstalled sesh"
   test:
-    desc: Run all tests
+    desc: Run all unit tests
     cmds:
       - go test ./... -v
   test-short:
-    desc: Run tests without verbose output
+    desc: Run unit tests without verbose output
     cmds:
       - go test ./...
   test-coverage:
-    desc: Run tests with coverage
+    desc: Run unit tests with coverage
     cmds:
       - go test ./... -coverprofile=coverage.out
       - go tool cover -html=coverage.out -o coverage.html
       - echo "Coverage report generated at coverage.html"
+  test-integration:
+    desc: Run integration tests inside Docker
+    cmds:
+      - docker build -f test/integration/Dockerfile -t sesh-integration .
+      - docker run --rm sesh-integration
+  test-e2e:
+    desc: Run end-to-end tests inside Docker
+    cmds:
+      - docker build -f test/e2e/Dockerfile -t sesh-e2e .
+      - docker run --rm sesh-e2e
+  test-all:
+    desc: Run unit, integration, and e2e tests
+    cmds:
+      - task: test-short
+      - task: test-integration
+      - task: test-e2e
   lint:
     desc: Run linter (requires golangci-lint)
     cmds:

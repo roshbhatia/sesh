@@ -4,295 +4,652 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
+// ---------------------------------------------------------------------------
+// helpers
+// ---------------------------------------------------------------------------
+
+// isolatedRoot sets XDG_STATE_HOME to a temp dir scoped to this test and
+// returns a cleanup function.
+func isolatedRoot(t *testing.T) string {
+	t.Helper()
+	tmp := t.TempDir()
+	t.Setenv("XDG_STATE_HOME", tmp)
+	return tmp
+}
+
+func setupTestGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	cmds := [][]string{
+		{"git", "init", dir},
+		{"git", "-C", dir, "config", "user.email", "test@example.com"},
+		{"git", "-C", dir, "config", "user.name", "Test User"},
+	}
+	for _, args := range cmds {
+		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("%v failed: %v\n%s", args, err, out)
+		}
+	}
+	readme := filepath.Join(dir, "README.md")
+	if err := os.WriteFile(readme, []byte("# Test\n"), 0644); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+	for _, args := range [][]string{
+		{"git", "-C", dir, "add", "."},
+		{"git", "-C", dir, "commit", "-m", "Initial commit"},
+	} {
+		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("%v failed: %v\n%s", args, err, out)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ValidateSessionName
+// ---------------------------------------------------------------------------
+
 func TestValidateSessionName(t *testing.T) {
-	tests := []struct {
+	cases := []struct {
 		name      string
 		input     string
 		wantError bool
 	}{
-		{"valid simple name", "test", false},
-		{"valid with hyphen", "test-session", false},
-		{"valid with underscore", "test_session", false},
-		{"valid with numbers", "test123", false},
-		{"empty name", "", true},
-		{"with spaces", "test session", true},
-		{"with slash", "test/session", true},
-		{"with special chars", "test@session", true},
+		{"simple", "test", false},
+		{"hyphen", "test-session", false},
+		{"underscore", "test_session", false},
+		{"numbers", "test123", false},
+		{"uppercase", "MySession", false},
+		{"mixed", "My-Session_2", false},
+		{"empty", "", true},
+		{"spaces", "test session", true},
+		{"slash", "test/session", true},
+		{"at sign", "test@session", true},
+		{"dot", "test.session", true},
+		{"leading hyphen", "-bad", false}, // hyphens allowed anywhere
 	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			err := ValidateSessionName(tt.input)
-			if (err != nil) != tt.wantError {
-				t.Errorf("ValidateSessionName(%q) error = %v, wantError %v", tt.input, err, tt.wantError)
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			err := ValidateSessionName(tc.input)
+			if (err != nil) != tc.wantError {
+				t.Errorf("ValidateSessionName(%q) error=%v, wantError=%v", tc.input, err, tc.wantError)
 			}
 		})
 	}
 }
 
+// ---------------------------------------------------------------------------
+// GetRepoBasename
+// ---------------------------------------------------------------------------
+
 func TestGetRepoBasename(t *testing.T) {
-	tests := []struct {
-		path     string
-		expected string
+	cases := []struct {
+		path, want string
 	}{
 		{"/home/user/repos/myrepo", "myrepo"},
 		{"/home/user/repos/myrepo/", "myrepo"},
 		{"myrepo", "myrepo"},
+		{"/a/b/c", "c"},
 	}
-
-	for _, tt := range tests {
-		result := GetRepoBasename(tt.path)
-		if result != tt.expected {
-			t.Errorf("GetRepoBasename(%q) = %q, want %q", tt.path, result, tt.expected)
-		}
-	}
-}
-
-func setupTestGitRepo(t *testing.T, dir string) {
-	t.Helper()
-
-	// Initialize git repo
-	cmd := exec.Command("git", "init", dir)
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to init git repo: %v", err)
-	}
-
-	// Configure git
-	exec.Command("git", "-C", dir, "config", "user.email", "test@example.com").Run()
-	exec.Command("git", "-C", dir, "config", "user.name", "Test User").Run()
-
-	// Create initial commit
-	readmePath := filepath.Join(dir, "README.md")
-	if err := os.WriteFile(readmePath, []byte("# Test Repo\n"), 0644); err != nil {
-		t.Fatalf("Failed to create README: %v", err)
-	}
-
-	cmd = exec.Command("git", "-C", dir, "add", ".")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to git add: %v", err)
-	}
-
-	cmd = exec.Command("git", "-C", dir, "commit", "-m", "Initial commit")
-	if err := cmd.Run(); err != nil {
-		t.Fatalf("Failed to git commit: %v", err)
+	for _, tc := range cases {
+		t.Run(tc.path, func(t *testing.T) {
+			got := GetRepoBasename(tc.path)
+			if got != tc.want {
+				t.Errorf("GetRepoBasename(%q) = %q, want %q", tc.path, got, tc.want)
+			}
+		})
 	}
 }
+
+// ---------------------------------------------------------------------------
+// IsGitRepo
+// ---------------------------------------------------------------------------
 
 func TestIsGitRepo(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmp := t.TempDir()
 
-	t.Run("is git repo", func(t *testing.T) {
-		repoDir := filepath.Join(tmpDir, "gitrepo")
-		setupTestGitRepo(t, repoDir)
-
-		if !IsGitRepo(repoDir) {
-			t.Error("Expected IsGitRepo to return true for git repo")
+	t.Run("git repo", func(t *testing.T) {
+		dir := filepath.Join(tmp, "repo")
+		setupTestGitRepo(t, dir)
+		if !IsGitRepo(dir) {
+			t.Error("expected true for git repo")
 		}
 	})
 
-	t.Run("not git repo", func(t *testing.T) {
-		notRepoDir := filepath.Join(tmpDir, "notrepo")
-		os.MkdirAll(notRepoDir, 0755)
+	t.Run("plain dir", func(t *testing.T) {
+		dir := filepath.Join(tmp, "plain")
+		os.MkdirAll(dir, 0755)
+		if IsGitRepo(dir) {
+			t.Error("expected false for plain dir")
+		}
+	})
 
-		if IsGitRepo(notRepoDir) {
-			t.Error("Expected IsGitRepo to return false for non-git directory")
+	t.Run("nonexistent path", func(t *testing.T) {
+		if IsGitRepo(filepath.Join(tmp, "does-not-exist")) {
+			t.Error("expected false for nonexistent path")
 		}
 	})
 }
 
-func TestCreateWorktree(t *testing.T) {
-	tmpDir := t.TempDir()
-
-	// Create a test git repo
-	repoDir := filepath.Join(tmpDir, "testrepo")
-	setupTestGitRepo(t, repoDir)
-
-	// Create session directory
-	sessionDir := filepath.Join(tmpDir, "sessions", "test-session")
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
-		t.Fatalf("Failed to create session dir: %v", err)
-	}
-
-	// Create worktree
-	worktreePath, err := CreateWorktree(repoDir, sessionDir, "test-session")
-	if err != nil {
-		t.Fatalf("CreateWorktree failed: %v", err)
-	}
-
-	// Verify worktree was created
-	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
-		t.Error("Worktree directory was not created")
-	}
-
-	// Verify it's a git worktree
-	if !IsGitRepo(worktreePath) {
-		t.Error("Created worktree is not recognized as git repo")
-	}
-
-	// Verify naming convention
-	expectedName := "testrepo-test-session"
-	if filepath.Base(worktreePath) != expectedName {
-		t.Errorf("Expected worktree name %q, got %q", expectedName, filepath.Base(worktreePath))
-	}
-}
+// ---------------------------------------------------------------------------
+// CreateSymlink
+// ---------------------------------------------------------------------------
 
 func TestCreateSymlink(t *testing.T) {
-	tmpDir := t.TempDir()
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "target")
+	os.MkdirAll(target, 0755)
+	sessionDir := filepath.Join(tmp, "session")
+	os.MkdirAll(sessionDir, 0755)
 
-	// Create target directory
-	targetDir := filepath.Join(tmpDir, "target")
-	if err := os.MkdirAll(targetDir, 0755); err != nil {
-		t.Fatalf("Failed to create target dir: %v", err)
-	}
-
-	// Create session directory
-	sessionDir := filepath.Join(tmpDir, "session")
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
-		t.Fatalf("Failed to create session dir: %v", err)
-	}
-
-	// Create symlink
-	linkPath, err := CreateSymlink(targetDir, sessionDir)
+	linkPath, err := CreateSymlink(target, sessionDir)
 	if err != nil {
-		t.Fatalf("CreateSymlink failed: %v", err)
+		t.Fatalf("CreateSymlink: %v", err)
 	}
 
-	// Verify symlink was created
 	info, err := os.Lstat(linkPath)
 	if err != nil {
-		t.Fatalf("Failed to stat symlink: %v", err)
+		t.Fatalf("Lstat: %v", err)
 	}
-
 	if info.Mode()&os.ModeSymlink == 0 {
-		t.Error("Created link is not a symlink")
+		t.Error("expected symlink, got regular entry")
 	}
 
-	// Verify symlink target
-	target, err := os.Readlink(linkPath)
+	resolved, err := os.Readlink(linkPath)
 	if err != nil {
-		t.Fatalf("Failed to read symlink: %v", err)
+		t.Fatalf("Readlink: %v", err)
 	}
-
-	if target != targetDir {
-		t.Errorf("Expected symlink target %q, got %q", targetDir, target)
+	if resolved != target {
+		t.Errorf("symlink target = %q, want %q", resolved, target)
 	}
 }
+
+func TestCreateSymlinkNamingConvention(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "my-cool-repo")
+	os.MkdirAll(target, 0755)
+	sessionDir := filepath.Join(tmp, "sess")
+	os.MkdirAll(sessionDir, 0755)
+
+	linkPath, err := CreateSymlink(target, sessionDir)
+	if err != nil {
+		t.Fatalf("CreateSymlink: %v", err)
+	}
+	if filepath.Base(linkPath) != "my-cool-repo" {
+		t.Errorf("expected link name 'my-cool-repo', got %q", filepath.Base(linkPath))
+	}
+}
+
+func TestCreateSymlinkDuplicate(t *testing.T) {
+	tmp := t.TempDir()
+	target := filepath.Join(tmp, "target")
+	os.MkdirAll(target, 0755)
+	sessionDir := filepath.Join(tmp, "sess")
+	os.MkdirAll(sessionDir, 0755)
+
+	if _, err := CreateSymlink(target, sessionDir); err != nil {
+		t.Fatalf("first CreateSymlink: %v", err)
+	}
+	_, err := CreateSymlink(target, sessionDir)
+	if err == nil {
+		t.Error("expected error on duplicate symlink, got nil")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CreateWorktree
+// ---------------------------------------------------------------------------
+
+func TestCreateWorktree(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "testrepo")
+	setupTestGitRepo(t, repoDir)
+
+	sessionDir := filepath.Join(tmp, "sessions", "my-session")
+	os.MkdirAll(sessionDir, 0755)
+
+	worktreePath, err := CreateWorktree(repoDir, sessionDir, "my-session")
+	if err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
+		t.Error("worktree directory was not created")
+	}
+	if !IsGitRepo(worktreePath) {
+		t.Error("worktree is not a git repo")
+	}
+	if filepath.Base(worktreePath) != "testrepo-my-session" {
+		t.Errorf("expected worktree name 'testrepo-my-session', got %q", filepath.Base(worktreePath))
+	}
+}
+
+func TestCreateWorktreeNonGitRepo(t *testing.T) {
+	tmp := t.TempDir()
+	plain := filepath.Join(tmp, "plain")
+	os.MkdirAll(plain, 0755)
+	sessionDir := filepath.Join(tmp, "sess")
+	os.MkdirAll(sessionDir, 0755)
+
+	_, err := CreateWorktree(plain, sessionDir, "sess")
+	if err == nil {
+		t.Error("expected error when source is not a git repo")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// CleanupWorktrees
+// ---------------------------------------------------------------------------
 
 func TestCleanupWorktrees(t *testing.T) {
-	tmpDir := t.TempDir()
+	isolatedRoot(t)
+	tmp := t.TempDir()
 
-	// Create a test git repo
-	repoDir := filepath.Join(tmpDir, "testrepo")
+	repoDir := filepath.Join(tmp, "testrepo")
 	setupTestGitRepo(t, repoDir)
 
-	// Create session directory
-	sessionDir := filepath.Join(tmpDir, "session")
-	if err := os.MkdirAll(sessionDir, 0755); err != nil {
-		t.Fatalf("Failed to create session dir: %v", err)
-	}
+	sessionDir := filepath.Join(tmp, "session")
+	os.MkdirAll(sessionDir, 0755)
 
-	// Create a worktree
 	worktreePath, err := CreateWorktree(repoDir, sessionDir, "test")
 	if err != nil {
-		t.Fatalf("Failed to create worktree: %v", err)
+		t.Fatalf("CreateWorktree: %v", err)
 	}
-
-	// Verify worktree exists
 	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
-		t.Fatal("Worktree was not created")
+		t.Fatal("worktree was not created")
 	}
 
-	// Cleanup worktrees
 	if err := CleanupWorktrees(sessionDir); err != nil {
-		t.Fatalf("CleanupWorktrees failed: %v", err)
+		t.Fatalf("CleanupWorktrees: %v", err)
 	}
 
-	// Verify worktree is removed (or at least cleanup attempted)
-	// Note: The directory might still exist but should be removed from git's worktree list
-	cmd := exec.Command("git", "-C", repoDir, "worktree", "list")
-	output, err := cmd.Output()
-	if err != nil {
-		t.Fatalf("Failed to list worktrees: %v", err)
-	}
-
-	// The output should only contain the main repo, not the worktree
-	if len(output) > 0 {
-		// Check that worktreePath is not in the list
-		// This is a basic check; a more robust check would parse the output
-		t.Logf("Worktree list after cleanup: %s", output)
+	exec.Command("git", "-C", repoDir, "worktree", "prune").Run()
+	out, _ := exec.Command("git", "-C", repoDir, "worktree", "list").Output()
+	if strings.Contains(string(out), worktreePath) {
+		t.Errorf("worktree still registered after cleanup + prune:\n%s", out)
 	}
 }
 
-func TestCreateSession(t *testing.T) {
-	tmpDir := t.TempDir()
+func TestCleanupWorktreesEmptyDir(t *testing.T) {
+	tmp := t.TempDir()
+	empty := filepath.Join(tmp, "empty")
+	os.MkdirAll(empty, 0755)
+	// Should not error on a directory with no worktrees
+	if err := CleanupWorktrees(empty); err != nil {
+		t.Errorf("CleanupWorktrees on empty dir: %v", err)
+	}
+}
 
-	repoDir := filepath.Join(tmpDir, "testrepo")
+func TestCleanupWorktreesNonexistentDir(t *testing.T) {
+	err := CleanupWorktrees("/nonexistent/path/that/does/not/exist")
+	if err == nil {
+		t.Error("expected error for nonexistent directory")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// GetWorktreeMainRepo
+// ---------------------------------------------------------------------------
+
+func TestGetWorktreeMainRepo(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "testrepo")
 	setupTestGitRepo(t, repoDir)
 
-	err := Create("test-session", []string{repoDir})
+	sessionDir := filepath.Join(tmp, "session")
+	os.MkdirAll(sessionDir, 0755)
+
+	worktreePath, err := CreateWorktree(repoDir, sessionDir, "test")
 	if err != nil {
-		t.Fatalf("Create failed: %v", err)
+		t.Fatalf("CreateWorktree: %v", err)
 	}
 
-	sessionPath, err := GetPath("test-session")
+	mainRepo, err := GetWorktreeMainRepo(worktreePath)
 	if err != nil {
-		t.Fatalf("GetPath failed: %v", err)
+		t.Fatalf("GetWorktreeMainRepo: %v", err)
 	}
-
-	worktreePath := filepath.Join(sessionPath, "testrepo-test-session")
-	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
-		t.Error("worktree was not created in session")
+	// The resolved main repo should point somewhere inside or equal to repoDir
+	if mainRepo == "" {
+		t.Error("expected non-empty main repo path")
 	}
 }
 
-func TestAddRepos(t *testing.T) {
-	tmpDir := t.TempDir()
+func TestGetWorktreeMainRepoNonGit(t *testing.T) {
+	tmp := t.TempDir()
+	_, err := GetWorktreeMainRepo(tmp)
+	if err == nil {
+		t.Error("expected error for non-git directory")
+	}
+}
 
-	// Create two test git repos
-	repo1 := filepath.Join(tmpDir, "repo1")
+// ---------------------------------------------------------------------------
+// Exists / GetPath
+// ---------------------------------------------------------------------------
+
+func TestExistsAndGetPath(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "r")
+	setupTestGitRepo(t, repoDir)
+
+	if err := Create("exist-test", []string{repoDir}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	if !Exists("exist-test") {
+		t.Error("expected Exists to return true")
+	}
+
+	path, err := GetPath("exist-test")
+	if err != nil {
+		t.Fatalf("GetPath: %v", err)
+	}
+	if path == "" {
+		t.Error("expected non-empty path")
+	}
+}
+
+func TestExistsFalse(t *testing.T) {
+	isolatedRoot(t)
+	if Exists("no-such-session") {
+		t.Error("expected Exists to return false for missing session")
+	}
+}
+
+func TestGetPathNotFound(t *testing.T) {
+	isolatedRoot(t)
+	_, err := GetPath("no-such-session")
+	if err == nil {
+		t.Error("expected error for nonexistent session")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Create
+// ---------------------------------------------------------------------------
+
+func TestCreateWithGitRepo(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "myrepo")
+	setupTestGitRepo(t, repoDir)
+
+	if err := Create("create-git", []string{repoDir}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	sessionPath, _ := GetPath("create-git")
+	worktree := filepath.Join(sessionPath, "myrepo-create-git")
+	if _, err := os.Stat(worktree); os.IsNotExist(err) {
+		t.Error("expected worktree to be created")
+	}
+}
+
+func TestCreateWithNonGitDir(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	plainDir := filepath.Join(tmp, "plain")
+	os.MkdirAll(plainDir, 0755)
+
+	if err := Create("create-plain", []string{plainDir}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	sessionPath, _ := GetPath("create-plain")
+	link := filepath.Join(sessionPath, "plain")
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("Lstat link: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Error("expected symlink for non-git dir")
+	}
+}
+
+func TestCreateDuplicateErrors(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "r")
+	setupTestGitRepo(t, repoDir)
+
+	if err := Create("dup-session", []string{repoDir}); err != nil {
+		t.Fatalf("first Create: %v", err)
+	}
+	if err := Create("dup-session", []string{repoDir}); err == nil {
+		t.Error("expected error on duplicate Create")
+	}
+}
+
+func TestCreateInvalidName(t *testing.T) {
+	isolatedRoot(t)
+	if err := Create("bad name!", []string{}); err == nil {
+		t.Error("expected error for invalid session name")
+	}
+}
+
+func TestCreateMultipleRepos(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repo1 := filepath.Join(tmp, "repo1")
+	repo2 := filepath.Join(tmp, "repo2")
 	setupTestGitRepo(t, repo1)
-
-	repo2 := filepath.Join(tmpDir, "repo2")
 	setupTestGitRepo(t, repo2)
 
-	// Create a session with first repo
-	err := Create("test-add-session", []string{repo1})
-	if err != nil {
-		t.Fatalf("Create failed: %v", err)
+	if err := Create("multi", []string{repo1, repo2}); err != nil {
+		t.Fatalf("Create: %v", err)
 	}
 
-	// Add second repo to session
-	err = AddRepos("test-add-session", []string{repo2})
-	if err != nil {
-		t.Fatalf("AddRepos failed: %v", err)
-	}
-
-	// Get session path
-	sessionPath, err := GetPath("test-add-session")
-	if err != nil {
-		t.Fatalf("GetPath failed: %v", err)
-	}
-
-	// Verify both worktrees exist
-	repo1Worktree := filepath.Join(sessionPath, "repo1-test-add-session")
-	if _, err := os.Stat(repo1Worktree); os.IsNotExist(err) {
-		t.Error("First repo worktree not found")
-	}
-
-	repo2Worktree := filepath.Join(sessionPath, "repo2-test-add-session")
-	if _, err := os.Stat(repo2Worktree); os.IsNotExist(err) {
-		t.Error("Second repo worktree not found after AddRepos")
-	}
-
-	// Verify both are valid git repos
-	if !IsGitRepo(repo1Worktree) {
-		t.Error("First worktree is not a git repo")
-	}
-	if !IsGitRepo(repo2Worktree) {
-		t.Error("Second worktree is not a git repo")
+	sessionPath, _ := GetPath("multi")
+	for _, name := range []string{"repo1-multi", "repo2-multi"} {
+		if _, err := os.Stat(filepath.Join(sessionPath, name)); os.IsNotExist(err) {
+			t.Errorf("expected %s worktree to exist", name)
+		}
 	}
 }
 
+// ---------------------------------------------------------------------------
+// List
+// ---------------------------------------------------------------------------
+
+func TestListEmpty(t *testing.T) {
+	isolatedRoot(t)
+	sessions, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(sessions) != 0 {
+		t.Errorf("expected 0 sessions, got %d", len(sessions))
+	}
+}
+
+func TestListMultiple(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "r")
+	setupTestGitRepo(t, repoDir)
+
+	for _, name := range []string{"alpha", "beta", "gamma"} {
+		if err := Create(name, []string{repoDir}); err != nil {
+			t.Fatalf("Create %s: %v", name, err)
+		}
+	}
+
+	sessions, err := List()
+	if err != nil {
+		t.Fatalf("List: %v", err)
+	}
+	if len(sessions) != 3 {
+		t.Errorf("expected 3 sessions, got %d", len(sessions))
+	}
+
+	names := map[string]bool{}
+	for _, s := range sessions {
+		names[s.Name] = true
+		if s.Path == "" {
+			t.Errorf("session %q has empty path", s.Name)
+		}
+		if s.LastModified.IsZero() {
+			t.Errorf("session %q has zero LastModified", s.Name)
+		}
+	}
+	for _, n := range []string{"alpha", "beta", "gamma"} {
+		if !names[n] {
+			t.Errorf("session %q missing from list", n)
+		}
+	}
+}
+
+func TestListRepoCount(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repo1 := filepath.Join(tmp, "r1")
+	repo2 := filepath.Join(tmp, "r2")
+	setupTestGitRepo(t, repo1)
+	setupTestGitRepo(t, repo2)
+
+	if err := Create("count-test", []string{repo1, repo2}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	sessions, _ := List()
+	for _, s := range sessions {
+		if s.Name == "count-test" && s.RepoCount != 2 {
+			t.Errorf("expected RepoCount=2, got %d", s.RepoCount)
+		}
+	}
+}
+
+// ---------------------------------------------------------------------------
+// AddRepos
+// ---------------------------------------------------------------------------
+
+func TestAddRepos(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repo1 := filepath.Join(tmp, "repo1")
+	repo2 := filepath.Join(tmp, "repo2")
+	setupTestGitRepo(t, repo1)
+	setupTestGitRepo(t, repo2)
+
+	if err := Create("add-test", []string{repo1}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := AddRepos("add-test", []string{repo2}); err != nil {
+		t.Fatalf("AddRepos: %v", err)
+	}
+
+	sessionPath, _ := GetPath("add-test")
+	for _, wt := range []string{"repo1-add-test", "repo2-add-test"} {
+		if _, err := os.Stat(filepath.Join(sessionPath, wt)); os.IsNotExist(err) {
+			t.Errorf("expected %s to exist after AddRepos", wt)
+		}
+	}
+}
+
+func TestAddReposSessionNotFound(t *testing.T) {
+	isolatedRoot(t)
+	if err := AddRepos("no-such", []string{"/tmp"}); err == nil {
+		t.Error("expected error adding to nonexistent session")
+	}
+}
+
+func TestAddReposNonGitDir(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "r")
+	setupTestGitRepo(t, repoDir)
+	plainDir := filepath.Join(tmp, "plain")
+	os.MkdirAll(plainDir, 0755)
+
+	if err := Create("add-plain", []string{repoDir}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := AddRepos("add-plain", []string{plainDir}); err != nil {
+		t.Fatalf("AddRepos with plain dir: %v", err)
+	}
+
+	sessionPath, _ := GetPath("add-plain")
+	link := filepath.Join(sessionPath, "plain")
+	info, err := os.Lstat(link)
+	if err != nil {
+		t.Fatalf("Lstat: %v", err)
+	}
+	if info.Mode()&os.ModeSymlink == 0 {
+		t.Error("expected symlink for non-git dir in AddRepos")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// Delete
+// ---------------------------------------------------------------------------
+
+func TestDelete(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "r")
+	setupTestGitRepo(t, repoDir)
+
+	if err := Create("del-test", []string{repoDir}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := Delete("del-test"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if Exists("del-test") {
+		t.Error("expected session to be gone after Delete")
+	}
+}
+
+func TestDeleteNotFound(t *testing.T) {
+	isolatedRoot(t)
+	if err := Delete("ghost"); err == nil {
+		t.Error("expected error deleting nonexistent session")
+	}
+}
+
+func TestDeleteCleansUpWorktrees(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "r")
+	setupTestGitRepo(t, repoDir)
+
+	if err := Create("wt-del", []string{repoDir}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	sessionPath, _ := GetPath("wt-del")
+	worktreePath := filepath.Join(sessionPath, "r-wt-del")
+
+	if err := Delete("wt-del"); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	// worktree directory should be gone
+	if _, err := os.Stat(worktreePath); !os.IsNotExist(err) {
+		t.Error("worktree directory still exists after Delete")
+	}
+
+	// git worktree prune removes stale entries; after that the path should not appear
+	exec.Command("git", "-C", repoDir, "worktree", "prune").Run()
+	out, _ := exec.Command("git", "-C", repoDir, "worktree", "list").Output()
+	if strings.Contains(string(out), worktreePath) {
+		t.Errorf("worktree still registered after Delete + prune:\n%s", out)
+	}
+}

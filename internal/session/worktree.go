@@ -90,8 +90,8 @@ func CleanupWorktrees(sessionPath string) error {
 		}
 		gitCommonDir := strings.TrimSpace(string(output))
 
-		// The main repo is the parent of the .git/worktrees directory
-		mainRepoPath := filepath.Dir(filepath.Dir(gitCommonDir))
+		// git-common-dir returns the .git dir of the main repo; its parent is the repo root
+		mainRepoPath := filepath.Dir(gitCommonDir)
 
 		// Remove the worktree
 		cmd = exec.Command("git", "-C", mainRepoPath, "worktree", "remove", entryPath, "--force")
