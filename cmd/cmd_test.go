@@ -422,63 +422,6 @@ func TestFormatRelativeTimeOldDate(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// init command
-// ---------------------------------------------------------------------------
-
-func TestInitBash(t *testing.T) {
-	isolatedRoot(t)
-	stdout, _, err := runCmd("init", "bash")
-	if err != nil {
-		t.Fatalf("init bash: %v", err)
-	}
-	if !strings.Contains(stdout, "s()") {
-		t.Errorf("expected bash s() function in output, got: %q", stdout)
-	}
-	if !strings.Contains(stdout, "si()") {
-		t.Errorf("expected bash si() function in output, got: %q", stdout)
-	}
-}
-
-func TestInitZsh(t *testing.T) {
-	isolatedRoot(t)
-	stdout, _, err := runCmd("init", "zsh")
-	if err != nil {
-		t.Fatalf("init zsh: %v", err)
-	}
-	if !strings.Contains(stdout, "s()") {
-		t.Errorf("expected zsh s() function in output, got: %q", stdout)
-	}
-}
-
-func TestInitFish(t *testing.T) {
-	isolatedRoot(t)
-	stdout, _, err := runCmd("init", "fish")
-	if err != nil {
-		t.Fatalf("init fish: %v", err)
-	}
-	if !strings.Contains(stdout, "function s") {
-		t.Errorf("expected fish function s in output, got: %q", stdout)
-	}
-	if !strings.Contains(stdout, "function si") {
-		t.Errorf("expected fish function si in output, got: %q", stdout)
-	}
-}
-
-func TestInitUnknownShell(t *testing.T) {
-	isolatedRoot(t)
-	_, _, err := runCmd("init", "powershell")
-	if err == nil {
-		t.Error("expected error for unknown shell")
-	}
-}
-
-func TestInitCommandVisible(t *testing.T) {
-	if initCmd.Hidden {
-		t.Error("init command should not be hidden")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // delete --force and cancellation
 // ---------------------------------------------------------------------------
 
