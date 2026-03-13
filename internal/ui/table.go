@@ -5,18 +5,26 @@ import (
 	"github.com/charmbracelet/lipgloss/table"
 )
 
-// NewTable renders a styled table with the given headers and rows.
+// NewTable renders a borderless styled table with the given headers and rows.
 func NewTable(headers []string, rows [][]string) string {
-	s := DefaultStyles
+	headerStyle := lipgloss.NewStyle().
+		Foreground(ColorPurple).
+		Bold(true).
+		PaddingRight(2)
 
-	headerStyle := lipgloss.NewStyle().Bold(true).Foreground(s.Accent.GetForeground()).Padding(0, 1)
-	cellStyle := lipgloss.NewStyle().Padding(0, 1)
+	cellStyle := lipgloss.NewStyle().PaddingRight(2)
+	dimCellStyle := cellStyle.Foreground(ColorGray)
 
 	t := table.New().
 		Headers(headers...).
+		Border(lipgloss.HiddenBorder()).
 		StyleFunc(func(row, col int) lipgloss.Style {
 			if row == table.HeaderRow {
 				return headerStyle
+			}
+			// Dim the last column (typically timestamps)
+			if col == len(headers)-1 {
+				return dimCellStyle
 			}
 			return cellStyle
 		})

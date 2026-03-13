@@ -2,34 +2,29 @@ package ui
 
 import "fmt"
 
-// Success returns a green-styled success message with ✓ prefix.
+// Success returns a green ✓ message.
 func Success(msg string) string {
-	return DefaultStyles.Success.Render("✓ " + msg)
+	return StyleSuccess.Render("✓") + " " + msg
 }
 
-// Error returns a red-styled error message with ✗ prefix.
+// Error returns a red ✗ message.
 func Error(msg string) string {
-	return DefaultStyles.Error.Render("✗ " + msg)
+	return StyleError.Render("✗") + " " + msg
 }
 
-// Warning returns a yellow-styled warning message with ⚠ prefix.
+// Warning returns a yellow ⚠ message.
 func Warning(msg string) string {
-	return DefaultStyles.Warning.Render("⚠ " + msg)
+	return StyleWarning.Render("⚠") + " " + msg
 }
 
-// Info returns a blue-styled informational message.
+// Info returns a blue ℹ message.
 func Info(msg string) string {
-	return DefaultStyles.Info.Render(msg)
+	return StyleInfo.Render("ℹ") + " " + msg
 }
 
-// Dim returns a dimmed/muted string.
-func Dim(msg string) string {
-	return DefaultStyles.Dim.Render(msg)
-}
-
-// Bold returns a bold string.
-func Bold(msg string) string {
-	return DefaultStyles.Bold.Render(msg)
+// Faint dims the given string.
+func Faint(msg string) string {
+	return Dim.Render(msg)
 }
 
 // Successf is a formatted version of Success.

@@ -1,61 +1,28 @@
 package ui
 
-import (
-	"io"
-	"os"
+import "github.com/charmbracelet/lipgloss"
 
-	"github.com/charmbracelet/lipgloss"
-	"github.com/muesli/termenv"
+// Color palette — uses ANSI 256 colors that work on both dark and light terminals.
+// lipgloss handles NO_COLOR / CLICOLOR automatically.
+var (
+	ColorPurple = lipgloss.Color("99")
+	ColorGreen  = lipgloss.Color("76")
+	ColorRed    = lipgloss.Color("204")
+	ColorYellow = lipgloss.Color("214")
+	ColorBlue   = lipgloss.Color("69")
+	ColorGray   = lipgloss.Color("245")
+	ColorWhite  = lipgloss.Color("255")
 )
 
-// Styles holds all lipgloss styles for consistent CLI output.
-type Styles struct {
-	Title   lipgloss.Style
-	Success lipgloss.Style
-	Error   lipgloss.Style
-	Warning lipgloss.Style
-	Info    lipgloss.Style
-	Dim     lipgloss.Style
-	Bold    lipgloss.Style
-	Accent  lipgloss.Style
-}
+// Reusable styles
+var (
+	Bold       = lipgloss.NewStyle().Bold(true)
+	Dim        = lipgloss.NewStyle().Foreground(ColorGray)
+	Accent     = lipgloss.NewStyle().Foreground(ColorPurple)
+	AccentBold = lipgloss.NewStyle().Foreground(ColorPurple).Bold(true)
 
-// NewStyles builds a style-set for the given writer. It honours:
-//   - NO_COLOR / CLICOLOR / CLICOLOR_FORCE environment variables
-//   - COLORTERM=truecolor / 24bit
-//   - Terminal capability detection via TERM / TERM_PROGRAM
-func NewStyles(w io.Writer) Styles {
-	profile := termenv.EnvColorProfile()
-	if termenv.EnvNoColor() {
-		profile = termenv.Ascii
-	}
-
-	out := termenv.NewOutput(w, termenv.WithColorCache(true), termenv.WithProfile(profile))
-	r := lipgloss.NewRenderer(w, termenv.WithProfile(profile))
-
-	s := Styles{
-		Title: r.NewStyle().Bold(true).MarginLeft(2),
-		Bold:  r.NewStyle().Bold(true),
-	}
-
-	if out.HasDarkBackground() {
-		s.Success = r.NewStyle().Foreground(lipgloss.Color("40"))
-		s.Error = r.NewStyle().Foreground(lipgloss.Color("196"))
-		s.Warning = r.NewStyle().Foreground(lipgloss.Color("214"))
-		s.Info = r.NewStyle().Foreground(lipgloss.Color("75"))
-		s.Dim = r.NewStyle().Foreground(lipgloss.Color("240"))
-		s.Accent = r.NewStyle().Foreground(lipgloss.Color("170"))
-	} else {
-		s.Success = r.NewStyle().Foreground(lipgloss.Color("28"))
-		s.Error = r.NewStyle().Foreground(lipgloss.Color("124"))
-		s.Warning = r.NewStyle().Foreground(lipgloss.Color("130"))
-		s.Info = r.NewStyle().Foreground(lipgloss.Color("33"))
-		s.Dim = r.NewStyle().Foreground(lipgloss.Color("245"))
-		s.Accent = r.NewStyle().Foreground(lipgloss.Color("125"))
-	}
-
-	return s
-}
-
-// DefaultStyles is initialized from stderr for immediate use in CLI commands.
-var DefaultStyles = NewStyles(os.Stderr)
+	StyleSuccess = lipgloss.NewStyle().Foreground(ColorGreen)
+	StyleError   = lipgloss.NewStyle().Foreground(ColorRed)
+	StyleWarning = lipgloss.NewStyle().Foreground(ColorYellow)
+	StyleInfo    = lipgloss.NewStyle().Foreground(ColorBlue)
+)

@@ -53,7 +53,7 @@ func (m spinnerModel) View() string {
 }
 
 // RunWithSpinner shows an animated spinner on stderr while fn runs.
-// If stderr is not a TTY, prints a simple message and runs fn directly.
+// Falls back to a plain message if stderr is not a TTY.
 func RunWithSpinner(message string, fn func() error) error {
 	if !term.IsTerminal(int(os.Stderr.Fd())) {
 		fmt.Fprintf(os.Stderr, "%s...\n", message)
@@ -62,20 +62,13 @@ func RunWithSpinner(message string, fn func() error) error {
 
 	s := spinner.New()
 	s.Spinner = spinner.Dot
-	s.Style = lipgloss.NewStyle().Foreground(lipgloss.Color("170"))
+	s.Style = lipgloss.NewStyle().Foreground(ColorPurple)
 
-	m := spinnerModel{
-		spinner: s,
-		message: message,
-		fn:      fn,
-	}
-
+	m := spinnerModel{spinner: s, message: message, fn: fn}
 	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	result, err := p.Run()
 	if err != nil {
-		return fmt.Errorf("spinner failed: %w", err)
+		return fmt.Errorf("spinner: %w", err)
 	}
-
-	final := result.(spinnerModel)
-	return final.err
+	return result.(spinnerModel).err
 }

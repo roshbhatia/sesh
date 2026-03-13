@@ -15,7 +15,6 @@ import (
 var newCmd = &cobra.Command{
 	Use:   "new <name>",
 	Short: "Create a new session",
-	Long:  `Create a new session with the given name and select repositories from zoxide.`,
 	Args:  cobra.ExactArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
@@ -23,9 +22,8 @@ var newCmd = &cobra.Command{
 		if err := session.ValidateSessionName(name); err != nil {
 			return err
 		}
-
 		if session.Exists(name) {
-			return fmt.Errorf("session '%s' already exists", name)
+			return fmt.Errorf("session %s already exists", ui.AccentBold.Render(name))
 		}
 
 		dirs, err := zoxideDirs()
@@ -35,9 +33,8 @@ var newCmd = &cobra.Command{
 
 		repos, err := picker.SelectMany("Select repositories", dirs)
 		if err != nil {
-			return fmt.Errorf("failed to select repositories: %w", err)
+			return fmt.Errorf("repository selection: %w", err)
 		}
-
 		if len(repos) == 0 {
 			return fmt.Errorf("no repositories selected")
 		}
@@ -50,10 +47,9 @@ var newCmd = &cobra.Command{
 		}
 
 		sessionPath, _ := session.GetPath(name)
-		fmt.Fprintln(os.Stderr, ui.Successf("Created session '%s'", name))
-		fmt.Fprintf(os.Stderr, "  %s %s\n", ui.Dim("Path:"), sessionPath)
-		fmt.Fprintf(os.Stderr, "  %s %d\n", ui.Dim("Repos:"), len(repos))
-
+		fmt.Fprintln(os.Stderr, ui.Successf("Created session %s", ui.AccentBold.Render(name)))
+		fmt.Fprintf(os.Stderr, "  %s %s\n", ui.Faint("path:"), sessionPath)
+		fmt.Fprintf(os.Stderr, "  %s %d\n", ui.Faint("repos:"), len(repos))
 		return nil
 	},
 }
@@ -65,7 +61,7 @@ func zoxideDirs() ([]string, error) {
 	}
 	dirs := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if len(dirs) == 0 || (len(dirs) == 1 && dirs[0] == "") {
-		return nil, fmt.Errorf("no directories found in zoxide database")
+		return nil, fmt.Errorf("no directories in zoxide database")
 	}
 	return dirs, nil
 }

@@ -13,28 +13,23 @@ import (
 
 var addCmd = &cobra.Command{
 	Use:   "add <name>",
-	Short: "Add repositories to an existing session",
-	Long:  `Add additional repositories to an existing session.`,
+	Short: "Add repositories to a session",
 	Args:  cobra.ExactArgs(1),
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) != 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
 		}
-		sessions, err := session.List()
-		if err != nil {
-			return nil, cobra.ShellCompDirectiveNoFileComp
+		sessions, _ := session.List()
+		names := make([]string, len(sessions))
+		for i, s := range sessions {
+			names[i] = s.Name
 		}
-		var completions []string
-		for _, s := range sessions {
-			completions = append(completions, s.Name)
-		}
-		return completions, cobra.ShellCompDirectiveNoFileComp
+		return names, cobra.ShellCompDirectiveNoFileComp
 	},
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-
 		if !session.Exists(name) {
-			return fmt.Errorf("session '%s' not found", name)
+			return fmt.Errorf("session %s not found", ui.AccentBold.Render(name))
 		}
 
 		sessionPath, err := session.GetPath(name)
@@ -76,9 +71,8 @@ var addCmd = &cobra.Command{
 
 		repos, err := picker.SelectMany("Select repositories to add", available)
 		if err != nil {
-			return fmt.Errorf("failed to select repositories: %w", err)
+			return fmt.Errorf("repository selection: %w", err)
 		}
-
 		if len(repos) == 0 {
 			return fmt.Errorf("no repositories selected")
 		}
@@ -93,28 +87,19 @@ var addCmd = &cobra.Command{
 			return fmt.Errorf("failed to add repositories: %w", err)
 		}
 
-		total := len(repos)
-		added := len(result.Added)
-
-		if len(result.Skipped) > 0 {
-			for _, s := range result.Skipped {
-				fmt.Fprintln(os.Stderr, ui.Warningf("Skipped %s (already in session)", s))
-			}
+		for _, s := range result.Skipped {
+			fmt.Fprintln(os.Stderr, ui.Warningf("Skipped %s (already in session)", s))
+		}
+		for repo, e := range result.Errors {
+			fmt.Fprintln(os.Stderr, ui.Errorf("Failed %s: %v", repo, e))
 		}
 
-		if len(result.Errors) > 0 {
-			for repo, e := range result.Errors {
-				fmt.Fprintln(os.Stderr, ui.Errorf("Failed %s: %v", repo, e))
-			}
-		}
-
-		fmt.Fprintln(os.Stderr, ui.Successf("Added %d/%d repo(s) to session '%s'", added, total, name))
-		fmt.Fprintf(os.Stderr, "  %s %s\n", ui.Dim("Path:"), sessionPath)
+		fmt.Fprintln(os.Stderr, ui.Successf("Added %d/%d repo(s) to %s", len(result.Added), len(repos), ui.AccentBold.Render(name)))
+		fmt.Fprintf(os.Stderr, "  %s %s\n", ui.Faint("path:"), sessionPath)
 
 		if result.Err() != nil {
 			return fmt.Errorf("some repositories failed to add")
 		}
-
 		return nil
 	},
 }

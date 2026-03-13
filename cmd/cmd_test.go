@@ -226,7 +226,7 @@ func TestListShowsHeaders(t *testing.T) {
 	session.Create("hdr-test", []string{repo})
 
 	stdout, _, _ := runCmd("list")
-	for _, hdr := range []string{"NAME", "REPOS", "LAST MODIFIED"} {
+	for _, hdr := range []string{"SESSION", "REPOS", "MODIFIED"} {
 		if !strings.Contains(stdout, hdr) {
 			t.Errorf("expected header %q in list output, got: %q", hdr, stdout)
 		}
