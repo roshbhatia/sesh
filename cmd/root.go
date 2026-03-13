@@ -6,6 +6,7 @@ import (
 
 	"github.com/roshbhatia/sesh/internal/picker"
 	"github.com/roshbhatia/sesh/internal/session"
+	"github.com/roshbhatia/sesh/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -25,7 +26,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		if len(sessions) == 0 {
-			fmt.Println("No sessions found. Create one with: sesh new <name>")
+			fmt.Println(ui.Info("No sessions found. Create one with: sesh new <name>"))
 			return nil
 		}
 
@@ -38,12 +39,9 @@ var rootCmd = &cobra.Command{
 			return nil
 		}
 
-		names := make([]string, len(sessions))
-		for i, s := range sessions {
-			names[i] = s.Name
-		}
+		names, descriptions := sessionPickerData(sessions)
 
-		selected, err := picker.SelectOne("Select session", names)
+		selected, err := picker.SelectOneWithDescription("Select session", names, descriptions)
 		if err != nil {
 			return fmt.Errorf("selection failed: %w", err)
 		}
@@ -56,6 +54,21 @@ var rootCmd = &cobra.Command{
 		fmt.Println(path)
 		return nil
 	},
+}
+
+// sessionPickerData builds names and descriptions for the session picker.
+func sessionPickerData(sessions []session.Session) ([]string, []string) {
+	names := make([]string, len(sessions))
+	descriptions := make([]string, len(sessions))
+	for i, s := range sessions {
+		names[i] = s.Name
+		repoLabel := "repos"
+		if s.RepoCount == 1 {
+			repoLabel = "repo"
+		}
+		descriptions[i] = fmt.Sprintf("%d %s · %s", s.RepoCount, repoLabel, formatRelativeTime(s.LastModified))
+	}
+	return names, descriptions
 }
 
 // greedyMatch returns the best session matching query: exact match first,

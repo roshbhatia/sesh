@@ -156,8 +156,11 @@ func (m singleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			m.quit = true
 			return m, tea.Quit
 		case "enter":
-			if i, ok := m.list.SelectedItem().(item); ok {
+			switch i := m.list.SelectedItem().(type) {
+			case item:
 				m.selected = i.value
+			case descItem:
+				m.selected = i.title
 			}
 			return m, tea.Quit
 		}
@@ -173,11 +176,12 @@ func (m singleModel) View() string {
 
 // multi-select model
 type multiModel struct {
-	list     list.Model
-	selected map[int]bool
-	items    []string
-	quit     bool
-	st       styles
+	list      list.Model
+	baseTitle string
+	selected  map[int]bool
+	items     []string
+	quit      bool
+	st        styles
 }
 
 func (m multiModel) Init() tea.Cmd { return nil }
@@ -211,10 +215,9 @@ func (m multiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m multiModel) View() string {
-	count := len(m.selected)
-	title := m.list.Title
-	if count > 0 {
-		title = fmt.Sprintf("%s (%d selected)", m.list.Title, count)
+	title := m.baseTitle
+	if count := len(m.selected); count > 0 {
+		title = fmt.Sprintf("%s (%d selected)", m.baseTitle, count)
 	}
 	m.list.Title = title
 	return "\n" + m.list.View()
@@ -268,9 +271,11 @@ func SelectMany(prompt string, items []string) ([]string, error) {
 		listItems[i] = item{value: s}
 	}
 
+	baseTitle := prompt + " (Space to toggle, Enter to confirm)"
+
 	checked := make(map[int]bool)
 	l := list.New(listItems, multiItemDelegate{checked: checked, st: st}, 0, min(len(items)+4, 20))
-	l.Title = prompt + " (Space to toggle, Enter to confirm)"
+	l.Title = baseTitle
 	l.SetShowStatusBar(false)
 	l.SetFilteringEnabled(true)
 	l.Styles.Title = st.title
@@ -278,10 +283,11 @@ func SelectMany(prompt string, items []string) ([]string, error) {
 	l.Styles.HelpStyle = st.help
 
 	m := multiModel{
-		list:     l,
-		selected: checked,
-		items:    items,
-		st:       st,
+		list:      l,
+		baseTitle: baseTitle,
+		selected:  checked,
+		items:     items,
+		st:        st,
 	}
 	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
 	result, err := p.Run()
@@ -301,9 +307,53 @@ func SelectMany(prompt string, items []string) ([]string, error) {
 	return out, nil
 }
 
-func min(a, b int) int {
-	if a < b {
-		return a
+// descItem supports both title and description for richer display.
+type descItem struct {
+	title string
+	desc  string
+}
+
+func (i descItem) Title() string       { return i.title }
+func (i descItem) Description() string { return i.desc }
+func (i descItem) FilterValue() string { return i.title }
+
+// SelectOneWithDescription presents an interactive list with title+description per item.
+// Filtering matches on title only. Returns the selected title string.
+func SelectOneWithDescription(prompt string, items []string, descriptions []string) (string, error) {
+	if len(items) == 0 {
+		return "", fmt.Errorf("no items to select")
 	}
-	return b
+
+	st := newStyles(os.Stderr)
+
+	listItems := make([]list.Item, len(items))
+	for i, s := range items {
+		desc := ""
+		if i < len(descriptions) {
+			desc = descriptions[i]
+		}
+		listItems[i] = descItem{title: s, desc: desc}
+	}
+
+	delegate := list.NewDefaultDelegate()
+	l := list.New(listItems, delegate, 0, min(len(items)*3+4, 24))
+	l.Title = prompt
+	l.SetShowStatusBar(false)
+	l.SetFilteringEnabled(true)
+	l.Styles.Title = st.title
+	l.Styles.PaginationStyle = st.paginator
+	l.Styles.HelpStyle = st.help
+
+	m := singleModel{list: l}
+	p := tea.NewProgram(m, tea.WithOutput(os.Stderr))
+	result, err := p.Run()
+	if err != nil {
+		return "", fmt.Errorf("picker failed: %w", err)
+	}
+
+	final := result.(singleModel)
+	if final.quit || final.selected == "" {
+		return "", fmt.Errorf("selection cancelled")
+	}
+	return final.selected, nil
 }

@@ -2,11 +2,13 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 
 	"github.com/roshbhatia/sesh/internal/picker"
 	"github.com/roshbhatia/sesh/internal/session"
+	"github.com/roshbhatia/sesh/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -40,14 +42,17 @@ var newCmd = &cobra.Command{
 			return fmt.Errorf("no repositories selected")
 		}
 
-		if err := session.Create(name, repos); err != nil {
+		err = ui.RunWithSpinner("Creating worktrees", func() error {
+			return session.Create(name, repos)
+		})
+		if err != nil {
 			return fmt.Errorf("failed to create session: %w", err)
 		}
 
 		sessionPath, _ := session.GetPath(name)
-		fmt.Printf("Created session '%s'\n", name)
-		fmt.Printf("  Path: %s\n", sessionPath)
-		fmt.Printf("  Repos: %d\n", len(repos))
+		fmt.Fprintln(os.Stderr, ui.Successf("Created session '%s'", name))
+		fmt.Fprintf(os.Stderr, "  %s %s\n", ui.Dim("Path:"), sessionPath)
+		fmt.Fprintf(os.Stderr, "  %s %d\n", ui.Dim("Repos:"), len(repos))
 
 		return nil
 	},

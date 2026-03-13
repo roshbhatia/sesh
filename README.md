@@ -10,6 +10,21 @@ cd sesh
 task install
 ```
 
+## Shell Integration
+
+Add to your shell config for `s` (jump to session) and `si` (interactive picker) functions:
+
+```bash
+# bash (~/.bashrc)
+eval "$(sesh init bash)"
+
+# zsh (~/.zshrc)
+eval "$(sesh init zsh)"
+
+# fish (~/.config/fish/config.fish)
+sesh init fish | source
+```
+
 ## Commands
 
 | Command | Description |
@@ -20,22 +35,7 @@ task install
 | `sesh delete <name>` / `sesh rm <name>` | Delete a session and clean up worktrees |
 | `sesh path <name>` | Print session path |
 | `sesh select` | Interactive session picker (outputs path) |
+| `sesh init <shell>` | Print shell integration snippets |
 | `sesh --greedy <query>` | Fuzzy match session and print its path |
-| `s <name>` | Jump to session (shell function) |
-| `si` | Interactive session picker with cd (shell function) |
-
-## Recipies
-
-```bash
-function s() {
-local path
-path=$(sesh --greedy "$1") || return 1
-cd "$path"
-}
-
-function si() {
-local path
-path=$(sesh) || return 1
-cd "$path"
-}
-```
+| `s <name>` | Jump to session (shell function, via `sesh init`) |
+| `si` | Interactive session picker with cd (shell function, via `sesh init`) |

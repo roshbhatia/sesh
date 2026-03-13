@@ -2,11 +2,10 @@ package cmd
 
 import (
 	"fmt"
-	"os"
-	"text/tabwriter"
 	"time"
 
 	"github.com/roshbhatia/sesh/internal/session"
+	"github.com/roshbhatia/sesh/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -22,22 +21,21 @@ var listCmd = &cobra.Command{
 		}
 
 		if len(sessions) == 0 {
-			fmt.Println("No sessions found. Create one with: sesh new <name>")
+			fmt.Println(ui.Info("No sessions found. Create one with: sesh new <name>"))
 			return nil
 		}
 
-		// Create table writer
-		w := tabwriter.NewWriter(os.Stdout, 0, 0, 3, ' ', 0)
-		fmt.Fprintln(w, "NAME\tREPOS\tLAST MODIFIED")
-		fmt.Fprintln(w, "────\t─────\t─────────────")
-
-		for _, s := range sessions {
-			// Format time as relative
-			timeStr := formatRelativeTime(s.LastModified)
-			fmt.Fprintf(w, "%s\t%d\t%s\n", s.Name, s.RepoCount, timeStr)
+		headers := []string{"NAME", "REPOS", "LAST MODIFIED"}
+		rows := make([][]string, len(sessions))
+		for i, s := range sessions {
+			rows[i] = []string{
+				s.Name,
+				fmt.Sprintf("%d", s.RepoCount),
+				formatRelativeTime(s.LastModified),
+			}
 		}
 
-		w.Flush()
+		fmt.Println(ui.NewTable(headers, rows))
 		return nil
 	},
 }

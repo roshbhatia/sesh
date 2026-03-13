@@ -18,3 +18,9 @@ func TestAddCommand(t *testing.T) {
 		t.Error("addCmd should have Short description")
 	}
 }
+
+func TestAddCommandHasValidArgsFunction(t *testing.T) {
+	if addCmd.ValidArgsFunction == nil {
+		t.Error("addCmd should have ValidArgsFunction for tab completion")
+	}
+}

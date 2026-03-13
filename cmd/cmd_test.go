@@ -60,6 +60,7 @@ func runCmd(args ...string) (stdout, stderr string, err error) {
 
 	// Reset persistent flags before each run
 	greedyQuery = ""
+	forceDelete = false
 
 	rootCmd.SetArgs(args)
 	err = rootCmd.Execute()
@@ -275,7 +276,7 @@ func TestDeleteCommandSuccess(t *testing.T) {
 	setupGitRepo(t, repo)
 	session.Create("del-me", []string{repo})
 
-	_, _, err := runCmd("delete", "del-me")
+	_, _, err := runCmd("delete", "--force", "del-me")
 	if err != nil {
 		t.Fatalf("delete: %v", err)
 	}
@@ -286,7 +287,7 @@ func TestDeleteCommandSuccess(t *testing.T) {
 
 func TestDeleteCommandNotFound(t *testing.T) {
 	isolatedRoot(t)
-	_, _, err := runCmd("delete", "no-such")
+	_, _, err := runCmd("delete", "--force", "no-such")
 	if err == nil {
 		t.Error("expected error deleting nonexistent session")
 	}
@@ -299,7 +300,7 @@ func TestDeleteAliasRm(t *testing.T) {
 	setupGitRepo(t, repo)
 	session.Create("rm-me", []string{repo})
 
-	_, _, err := runCmd("rm", "rm-me")
+	_, _, err := runCmd("rm", "--force", "rm-me")
 	if err != nil {
 		t.Fatalf("rm alias: %v", err)
 	}
@@ -315,7 +316,7 @@ func TestDeleteAliasRemove(t *testing.T) {
 	setupGitRepo(t, repo)
 	session.Create("remove-me", []string{repo})
 
-	_, _, err := runCmd("remove", "remove-me")
+	_, _, err := runCmd("remove", "--force", "remove-me")
 	if err != nil {
 		t.Fatalf("remove alias: %v", err)
 	}
@@ -417,5 +418,84 @@ func TestFormatRelativeTimeOldDate(t *testing.T) {
 	got := formatRelativeTime(old)
 	if !strings.Contains(got, "2020") {
 		t.Errorf("expected year '2020' in output, got %q", got)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// init command
+// ---------------------------------------------------------------------------
+
+func TestInitBash(t *testing.T) {
+	isolatedRoot(t)
+	stdout, _, err := runCmd("init", "bash")
+	if err != nil {
+		t.Fatalf("init bash: %v", err)
+	}
+	if !strings.Contains(stdout, "s()") {
+		t.Errorf("expected bash s() function in output, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "si()") {
+		t.Errorf("expected bash si() function in output, got: %q", stdout)
+	}
+}
+
+func TestInitZsh(t *testing.T) {
+	isolatedRoot(t)
+	stdout, _, err := runCmd("init", "zsh")
+	if err != nil {
+		t.Fatalf("init zsh: %v", err)
+	}
+	if !strings.Contains(stdout, "s()") {
+		t.Errorf("expected zsh s() function in output, got: %q", stdout)
+	}
+}
+
+func TestInitFish(t *testing.T) {
+	isolatedRoot(t)
+	stdout, _, err := runCmd("init", "fish")
+	if err != nil {
+		t.Fatalf("init fish: %v", err)
+	}
+	if !strings.Contains(stdout, "function s") {
+		t.Errorf("expected fish function s in output, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "function si") {
+		t.Errorf("expected fish function si in output, got: %q", stdout)
+	}
+}
+
+func TestInitUnknownShell(t *testing.T) {
+	isolatedRoot(t)
+	_, _, err := runCmd("init", "powershell")
+	if err == nil {
+		t.Error("expected error for unknown shell")
+	}
+}
+
+func TestInitCommandVisible(t *testing.T) {
+	if initCmd.Hidden {
+		t.Error("init command should not be hidden")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// delete --force and cancellation
+// ---------------------------------------------------------------------------
+
+func TestDeleteCommandNonTTYRequiresForce(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "r")
+	setupGitRepo(t, repo)
+	session.Create("force-test", []string{repo})
+
+	// Without --force in non-TTY, should error
+	forceDelete = false
+	_, _, err := runCmd("delete", "force-test")
+	if err == nil {
+		t.Error("expected error when deleting without --force in non-TTY")
+	}
+	if !strings.Contains(err.Error(), "--force") {
+		t.Errorf("expected error to mention --force, got: %v", err)
 	}
 }

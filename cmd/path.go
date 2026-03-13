@@ -40,12 +40,9 @@ var selectCmd = &cobra.Command{
 			return fmt.Errorf("no sessions found")
 		}
 
-		names := make([]string, len(sessions))
-		for i, s := range sessions {
-			names[i] = s.Name
-		}
+		names, descriptions := sessionPickerData(sessions)
 
-		selected, err := picker.SelectOne("Select session", names)
+		selected, err := picker.SelectOneWithDescription("Select session", names, descriptions)
 		if err != nil {
 			return err
 		}

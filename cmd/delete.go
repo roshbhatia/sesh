@@ -2,10 +2,16 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 
+	"github.com/charmbracelet/huh"
 	"github.com/roshbhatia/sesh/internal/session"
+	"github.com/roshbhatia/sesh/internal/ui"
 	"github.com/spf13/cobra"
+	"golang.org/x/term"
 )
+
+var forceDelete bool
 
 var deleteCmd = &cobra.Command{
 	Use:     "delete <name>",
@@ -35,16 +41,39 @@ var deleteCmd = &cobra.Command{
 			return fmt.Errorf("session '%s' not found", name)
 		}
 
+		if !forceDelete {
+			// Check if stdin is a TTY
+			if !term.IsTerminal(int(os.Stdin.Fd())) {
+				return fmt.Errorf("non-interactive environment: use --force to delete without confirmation")
+			}
+
+			var confirmed bool
+			err := huh.NewConfirm().
+				Title(fmt.Sprintf("Delete session '%s'?", name)).
+				Affirmative("Yes, delete").
+				Negative("Cancel").
+				Value(&confirmed).
+				Run()
+			if err != nil {
+				return fmt.Errorf("confirmation failed: %w", err)
+			}
+			if !confirmed {
+				fmt.Fprintln(os.Stderr, ui.Info("Deletion cancelled."))
+				return nil
+			}
+		}
+
 		// Delete the session
 		if err := session.Delete(name); err != nil {
 			return fmt.Errorf("failed to delete session: %w", err)
 		}
 
-		fmt.Printf("✓ Deleted session '%s'\n", name)
+		fmt.Fprintln(os.Stderr, ui.Successf("Deleted session '%s'", name))
 		return nil
 	},
 }
 
 func init() {
+	deleteCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Skip confirmation prompt")
 	rootCmd.AddCommand(deleteCmd)
 }

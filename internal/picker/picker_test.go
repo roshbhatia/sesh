@@ -41,11 +41,11 @@ func TestMultiItemDelegateUpdate(t *testing.T) {
 }
 
 type renderScenario struct {
-	name      string
-	index     int
-	cursor    int
-	checked   map[int]bool
-	wantFill  string
+	name       string
+	index      int
+	cursor     int
+	checked    map[int]bool
+	wantFill   string
 	wantAbsent string
 }
 
@@ -65,10 +65,10 @@ func TestMultiItemDelegateRender(t *testing.T) {
 	}
 
 	tests := []struct {
-		name       string
-		index      int         // which item to render
-		cursor     int         // current cursor position in list
-		checked    map[int]bool
+		name        string
+		index       int // which item to render
+		cursor      int // current cursor position in list
+		checked     map[int]bool
 		wantChecked bool
 		wantCursor  bool
 	}{
@@ -217,25 +217,6 @@ func TestItemFilterValue(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// min helper
-// ---------------------------------------------------------------------------
-
-func TestMin(t *testing.T) {
-	tests := []struct{ a, b, want int }{
-		{1, 2, 1},
-		{5, 3, 3},
-		{4, 4, 4},
-		{0, 10, 0},
-		{-1, 1, -1},
-	}
-	for _, tt := range tests {
-		if got := min(tt.a, tt.b); got != tt.want {
-			t.Errorf("min(%d,%d) = %d, want %d", tt.a, tt.b, got, tt.want)
-		}
-	}
-}
-
-// ---------------------------------------------------------------------------
 // singleModel / multiModel state machine tests (no TUI program execution)
 // ---------------------------------------------------------------------------
 
@@ -296,14 +277,14 @@ func TestSingleModelView(t *testing.T) {
 }
 
 func TestMultiModelInit(t *testing.T) {
-	m := multiModel{list: makeListModel([]string{"a"}), selected: map[int]bool{}, st: testSt()}
+	m := multiModel{list: makeListModel([]string{"a"}), baseTitle: "Pick", selected: map[int]bool{}, st: testSt()}
 	if cmd := m.Init(); cmd != nil {
 		t.Error("expected Init to return nil")
 	}
 }
 
 func TestMultiModelQuit(t *testing.T) {
-	m := multiModel{list: makeListModel([]string{"a"}), selected: map[int]bool{}, st: testSt()}
+	m := multiModel{list: makeListModel([]string{"a"}), baseTitle: "Pick", selected: map[int]bool{}, st: testSt()}
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune("q")})
 	final := result.(multiModel)
 	if !final.quit {
@@ -312,7 +293,7 @@ func TestMultiModelQuit(t *testing.T) {
 }
 
 func TestMultiModelCtrlC(t *testing.T) {
-	m := multiModel{list: makeListModel([]string{"a"}), selected: map[int]bool{}, st: testSt()}
+	m := multiModel{list: makeListModel([]string{"a"}), baseTitle: "Pick", selected: map[int]bool{}, st: testSt()}
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyCtrlC})
 	final := result.(multiModel)
 	if !final.quit {
@@ -322,10 +303,11 @@ func TestMultiModelCtrlC(t *testing.T) {
 
 func TestMultiModelSpaceTogglesSelection(t *testing.T) {
 	m := multiModel{
-		list:     makeListModel([]string{"a", "b", "c"}),
-		selected: map[int]bool{},
-		items:    []string{"a", "b", "c"},
-		st:       testSt(),
+		list:      makeListModel([]string{"a", "b", "c"}),
+		baseTitle: "Pick",
+		selected:  map[int]bool{},
+		items:     []string{"a", "b", "c"},
+		st:        testSt(),
 	}
 
 	result, _ := m.Update(tea.KeyMsg{Type: tea.KeyRunes, Runes: []rune(" ")})
@@ -342,36 +324,109 @@ func TestMultiModelSpaceTogglesSelection(t *testing.T) {
 }
 
 func TestMultiModelEnterConfirms(t *testing.T) {
-	m := multiModel{list: makeListModel([]string{"a"}), selected: map[int]bool{0: true}, items: []string{"a"}, st: testSt()}
+	m := multiModel{list: makeListModel([]string{"a"}), baseTitle: "Pick", selected: map[int]bool{0: true}, items: []string{"a"}, st: testSt()}
 	_, cmd := m.Update(tea.KeyMsg{Type: tea.KeyEnter})
 	_ = cmd
 }
 
 func TestMultiModelViewShowsCount(t *testing.T) {
 	m := multiModel{
-		list:     makeListModel([]string{"a", "b"}),
-		selected: map[int]bool{0: true, 1: true},
-		items:    []string{"a", "b"},
-		st:       testSt(),
+		list:      makeListModel([]string{"a", "b"}),
+		baseTitle: "Pick",
+		selected:  map[int]bool{0: true, 1: true},
+		items:     []string{"a", "b"},
+		st:        testSt(),
 	}
-	m.list.Title = "Pick"
-	v := m.View()
-	if !strings.Contains(v, "2 selected") {
-		t.Errorf("expected '2 selected' in view, got: %q", v)
+
+	// Call View() multiple times — title must not accumulate
+	v1 := m.View()
+	if !strings.Contains(v1, "2 selected") {
+		t.Errorf("expected '2 selected' in first view, got: %q", v1)
+	}
+
+	v2 := m.View()
+	if !strings.Contains(v2, "2 selected") {
+		t.Errorf("expected '2 selected' in second view, got: %q", v2)
+	}
+
+	// Count occurrences of "(2 selected)" — must be exactly 1
+	count := strings.Count(v2, "(2 selected)")
+	if count != 1 {
+		t.Errorf("expected exactly 1 occurrence of '(2 selected)' in view after multiple calls, got %d in: %q", count, v2)
 	}
 }
 
 func TestMultiModelViewNoCount(t *testing.T) {
-	m := multiModel{list: makeListModel([]string{"a"}), selected: map[int]bool{}, items: []string{"a"}, st: testSt()}
-	m.list.Title = "Pick"
+	m := multiModel{
+		list:      makeListModel([]string{"a"}),
+		baseTitle: "Pick",
+		selected:  map[int]bool{},
+		items:     []string{"a"},
+		st:        testSt(),
+	}
+
 	v := m.View()
 	if strings.Contains(v, "selected") {
 		t.Errorf("expected no 'selected' text when nothing selected, got: %q", v)
 	}
+
+	// Verify base title is present
+	if !strings.Contains(v, "Pick") {
+		t.Errorf("expected base title 'Pick' in view, got: %q", v)
+	}
+}
+
+func TestMultiModelViewTitleDoesNotAccumulate(t *testing.T) {
+	m := multiModel{
+		list:      makeListModel([]string{"a", "b"}),
+		baseTitle: "Pick",
+		selected:  map[int]bool{0: true},
+		items:     []string{"a", "b"},
+		st:        testSt(),
+	}
+
+	// Call View() 10 times
+	var lastView string
+	for i := 0; i < 10; i++ {
+		lastView = m.View()
+	}
+
+	// Should have exactly one "(1 selected)" suffix, not accumulated
+	count := strings.Count(lastView, "selected")
+	if count != 1 {
+		t.Errorf("expected exactly 1 'selected' in view after 10 calls, got %d in: %q", count, lastView)
+	}
+}
+
+func TestMultiModelViewTitleUpdatesWithSelectionChange(t *testing.T) {
+	m := multiModel{
+		list:      makeListModel([]string{"a", "b", "c"}),
+		baseTitle: "Pick",
+		selected:  map[int]bool{0: true},
+		items:     []string{"a", "b", "c"},
+		st:        testSt(),
+	}
+
+	v1 := m.View()
+	if !strings.Contains(v1, "(1 selected)") {
+		t.Errorf("expected '(1 selected)' in view, got: %q", v1)
+	}
+
+	// Add another selection
+	m.selected[1] = true
+
+	v2 := m.View()
+	if !strings.Contains(v2, "(2 selected)") {
+		t.Errorf("expected '(2 selected)' after adding selection, got: %q", v2)
+	}
+	// Must NOT have "(1 selected)" leftover
+	if strings.Contains(v2, "(1 selected)") {
+		t.Errorf("expected no leftover '(1 selected)' in view, got: %q", v2)
+	}
 }
 
 func TestMultiModelWindowResize(t *testing.T) {
-	m := multiModel{list: makeListModel([]string{"a"}), selected: map[int]bool{}, st: testSt()}
+	m := multiModel{list: makeListModel([]string{"a"}), baseTitle: "Pick", selected: map[int]bool{}, st: testSt()}
 	result, _ := m.Update(tea.WindowSizeMsg{Width: 120, Height: 40})
 	_ = result.(multiModel)
 }
@@ -474,4 +529,36 @@ func TestStderrStylesInitialized(t *testing.T) {
 	// stderrStyles is package-level; just confirm it doesn't zero-value panic
 	_ = stderrStyles.title
 	_ = stderrStyles.item
+}
+
+// ---------------------------------------------------------------------------
+// descItem / SelectOneWithDescription
+// ---------------------------------------------------------------------------
+
+func TestDescItemFilterValue(t *testing.T) {
+	i := descItem{title: "my-session", desc: "3 repos"}
+	if i.FilterValue() != "my-session" {
+		t.Errorf("expected FilterValue 'my-session', got %q", i.FilterValue())
+	}
+}
+
+func TestDescItemTitle(t *testing.T) {
+	i := descItem{title: "session-a", desc: "info"}
+	if i.Title() != "session-a" {
+		t.Errorf("expected Title 'session-a', got %q", i.Title())
+	}
+}
+
+func TestDescItemDescription(t *testing.T) {
+	i := descItem{title: "session-a", desc: "2 repos · just now"}
+	if i.Description() != "2 repos · just now" {
+		t.Errorf("expected Description '2 repos · just now', got %q", i.Description())
+	}
+}
+
+func TestSelectOneWithDescriptionEmptyItems(t *testing.T) {
+	_, err := SelectOneWithDescription("prompt", []string{}, []string{})
+	if err == nil {
+		t.Error("expected error for empty items")
+	}
 }

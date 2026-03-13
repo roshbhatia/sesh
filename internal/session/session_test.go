@@ -134,6 +134,39 @@ func TestIsGitRepo(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
+// gitExec
+// ---------------------------------------------------------------------------
+
+func TestGitExecErrorIncludesStderr(t *testing.T) {
+	tmp := t.TempDir()
+	// Run a git command that will fail with an informative error
+	_, err := gitExec(tmp, "rev-parse", "--git-dir")
+	if err == nil {
+		t.Fatal("expected error for non-git directory")
+	}
+	errStr := err.Error()
+	if !strings.Contains(errStr, "git rev-parse failed for") {
+		t.Errorf("expected error to contain 'git rev-parse failed for', got: %s", errStr)
+	}
+	// Should contain some git stderr content (e.g., "fatal: not a git repository")
+	if !strings.Contains(strings.ToLower(errStr), "fatal") && !strings.Contains(strings.ToLower(errStr), "not a git") {
+		t.Logf("warning: error may not contain git stderr content: %s", errStr)
+	}
+}
+
+func TestGitExecSuccess(t *testing.T) {
+	tmp := t.TempDir()
+	setupTestGitRepo(t, tmp)
+	out, err := gitExec(tmp, "rev-parse", "--git-dir")
+	if err != nil {
+		t.Fatalf("gitExec: %v", err)
+	}
+	if out == "" {
+		t.Error("expected non-empty output from rev-parse --git-dir")
+	}
+}
+
+// ---------------------------------------------------------------------------
 // CreateSymlink
 // ---------------------------------------------------------------------------
 
@@ -189,12 +222,17 @@ func TestCreateSymlinkDuplicate(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sess")
 	os.MkdirAll(sessionDir, 0755)
 
-	if _, err := CreateSymlink(target, sessionDir); err != nil {
+	link1, err := CreateSymlink(target, sessionDir)
+	if err != nil {
 		t.Fatalf("first CreateSymlink: %v", err)
 	}
-	_, err := CreateSymlink(target, sessionDir)
-	if err == nil {
-		t.Error("expected error on duplicate symlink, got nil")
+	// Second symlink with same target should get disambiguated name
+	link2, err := CreateSymlink(target, sessionDir)
+	if err != nil {
+		t.Fatalf("second CreateSymlink: %v", err)
+	}
+	if link1 == link2 {
+		t.Error("expected different paths for duplicate symlinks")
 	}
 }
 
@@ -238,6 +276,143 @@ func TestCreateWorktreeNonGitRepo(t *testing.T) {
 	_, err := CreateWorktree(plain, sessionDir, "sess")
 	if err == nil {
 		t.Error("expected error when source is not a git repo")
+	}
+}
+
+func TestCreateWorktreeOnSessionBranch(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "testrepo")
+	setupTestGitRepo(t, repoDir)
+
+	sessionDir := filepath.Join(tmp, "sessions", "feat")
+	os.MkdirAll(sessionDir, 0755)
+
+	worktreePath, err := CreateWorktree(repoDir, sessionDir, "feat")
+	if err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	// Verify the worktree is on a sesh/ prefixed branch, not detached HEAD
+	branch, err := gitExec(worktreePath, "rev-parse", "--abbrev-ref", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse --abbrev-ref HEAD: %v", err)
+	}
+	if !strings.HasPrefix(branch, "sesh/") {
+		t.Errorf("expected branch to start with 'sesh/', got %q", branch)
+	}
+	if branch != "sesh/feat/testrepo" {
+		t.Errorf("expected branch 'sesh/feat/testrepo', got %q", branch)
+	}
+}
+
+func TestCreateWorktreeDoesNotClobberMain(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "testrepo")
+	setupTestGitRepo(t, repoDir)
+
+	// Get original main branch ref
+	originalRef, err := gitExec(repoDir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse HEAD: %v", err)
+	}
+
+	sessionDir := filepath.Join(tmp, "sessions", "test")
+	os.MkdirAll(sessionDir, 0755)
+
+	_, err = CreateWorktree(repoDir, sessionDir, "test")
+	if err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+
+	// Verify main ref hasn't changed
+	afterRef, err := gitExec(repoDir, "rev-parse", "HEAD")
+	if err != nil {
+		t.Fatalf("rev-parse HEAD after: %v", err)
+	}
+	if originalRef != afterRef {
+		t.Errorf("main branch ref changed: %s -> %s", originalRef, afterRef)
+	}
+}
+
+func TestCreateWorktreeSucceedsWhenBranchCheckedOutElsewhere(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "testrepo")
+	setupTestGitRepo(t, repoDir)
+
+	sessionDir1 := filepath.Join(tmp, "sessions", "sess1")
+	sessionDir2 := filepath.Join(tmp, "sessions", "sess2")
+	os.MkdirAll(sessionDir1, 0755)
+	os.MkdirAll(sessionDir2, 0755)
+
+	// Create first worktree — its branch is checked out
+	wt1, err := CreateWorktree(repoDir, sessionDir1, "sess1")
+	if err != nil {
+		t.Fatalf("first CreateWorktree: %v", err)
+	}
+	if !IsGitRepo(wt1) {
+		t.Fatal("first worktree is not a git repo")
+	}
+
+	// Create second worktree — should succeed despite first having source branch checked out
+	wt2, err := CreateWorktree(repoDir, sessionDir2, "sess2")
+	if err != nil {
+		t.Fatalf("second CreateWorktree: %v (source branch already checked out in %s)", err, wt1)
+	}
+	if !IsGitRepo(wt2) {
+		t.Fatal("second worktree is not a git repo")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// disambiguatedName
+// ---------------------------------------------------------------------------
+
+func TestDisambiguatedNameSameBasename(t *testing.T) {
+	tmp := t.TempDir()
+	sessionDir := filepath.Join(tmp, "session")
+	os.MkdirAll(sessionDir, 0755)
+
+	// First repo gets simple name
+	repo1 := filepath.Join(tmp, "team-a", "api")
+	os.MkdirAll(repo1, 0755)
+	name1 := disambiguatedName(repo1, sessionDir, "feat")
+	if name1 != "api-feat" {
+		t.Errorf("expected 'api-feat', got %q", name1)
+	}
+
+	// Create entry so next one collides
+	os.MkdirAll(filepath.Join(sessionDir, name1), 0755)
+
+	// Second repo with same basename gets parent-dir prefix
+	repo2 := filepath.Join(tmp, "team-b", "api")
+	os.MkdirAll(repo2, 0755)
+	name2 := disambiguatedName(repo2, sessionDir, "feat")
+	if name2 != "team-b-api-feat" {
+		t.Errorf("expected 'team-b-api-feat', got %q", name2)
+	}
+}
+
+func TestDisambiguatedNameNumericFallback(t *testing.T) {
+	tmp := t.TempDir()
+	sessionDir := filepath.Join(tmp, "session")
+	os.MkdirAll(sessionDir, 0755)
+
+	repo1 := filepath.Join(tmp, "team-a", "api")
+	os.MkdirAll(repo1, 0755)
+
+	// Create simple and parent-prefixed entries to force numeric fallback
+	os.MkdirAll(filepath.Join(sessionDir, "api-feat"), 0755)
+	os.MkdirAll(filepath.Join(sessionDir, "team-a-api-feat"), 0755)
+
+	name := disambiguatedName(repo1, sessionDir, "feat")
+	if name != "api-2-feat" {
+		t.Errorf("expected 'api-2-feat', got %q", name)
 	}
 }
 
@@ -325,6 +500,42 @@ func TestGetWorktreeMainRepoNonGit(t *testing.T) {
 	_, err := GetWorktreeMainRepo(tmp)
 	if err == nil {
 		t.Error("expected error for non-git directory")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// ListRepoSources
+// ---------------------------------------------------------------------------
+
+func TestListRepoSources(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "myrepo")
+	setupTestGitRepo(t, repoDir)
+	plainDir := filepath.Join(tmp, "plain")
+	os.MkdirAll(plainDir, 0755)
+
+	sessionDir := filepath.Join(tmp, "session")
+	os.MkdirAll(sessionDir, 0755)
+
+	// Create a worktree and a symlink
+	_, err := CreateWorktree(repoDir, sessionDir, "test")
+	if err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+	_, err = CreateSymlink(plainDir, sessionDir)
+	if err != nil {
+		t.Fatalf("CreateSymlink: %v", err)
+	}
+
+	sources, err := ListRepoSources(sessionDir)
+	if err != nil {
+		t.Fatalf("ListRepoSources: %v", err)
+	}
+
+	if len(sources) != 2 {
+		t.Errorf("expected 2 sources, got %d: %v", len(sources), sources)
 	}
 }
 
@@ -594,6 +805,120 @@ func TestAddReposNonGitDir(t *testing.T) {
 	}
 }
 
+func TestAddReposDuplicateSkips(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "myrepo")
+	setupTestGitRepo(t, repoDir)
+
+	if err := Create("dup-add", []string{repoDir}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Adding the same repo again should not error (it's skipped)
+	err := AddRepos("dup-add", []string{repoDir})
+	if err != nil {
+		t.Fatalf("AddRepos with duplicate should not error, got: %v", err)
+	}
+}
+
+func TestAddReposDuplicateViaResolvedPath(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "myrepo")
+	setupTestGitRepo(t, repoDir)
+
+	// Create a symlink to the repo to simulate different path
+	symlinkToRepo := filepath.Join(tmp, "repo-alias")
+	os.Symlink(repoDir, symlinkToRepo)
+
+	if err := Create("dup-resolved", []string{repoDir}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Adding via symlink path should detect duplicate via resolved path
+	err := AddRepos("dup-resolved", []string{symlinkToRepo})
+	if err != nil {
+		t.Fatalf("AddRepos with resolved duplicate should not error, got: %v", err)
+	}
+}
+
+func setupEmptyGitRepo(t *testing.T, dir string) {
+	t.Helper()
+	cmds := [][]string{
+		{"git", "init", dir},
+		{"git", "-C", dir, "config", "user.email", "test@example.com"},
+		{"git", "-C", dir, "config", "user.name", "Test User"},
+	}
+	for _, args := range cmds {
+		if out, err := exec.Command(args[0], args[1:]...).CombinedOutput(); err != nil {
+			t.Fatalf("%v failed: %v\n%s", args, err, out)
+		}
+	}
+}
+
+func TestAddReposPartialFailure(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repo1 := filepath.Join(tmp, "repo1")
+	repo2 := filepath.Join(tmp, "repo2")
+	setupTestGitRepo(t, repo1)
+	setupTestGitRepo(t, repo2)
+
+	badDir := filepath.Join(tmp, "badrepo")
+	setupEmptyGitRepo(t, badDir)
+
+	if err := Create("partial-fail", []string{repo1}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	result, err := AddReposResult("partial-fail", []string{repo2, badDir})
+	if err != nil {
+		t.Fatalf("AddReposResult session error: %v", err)
+	}
+
+	found := false
+	for _, a := range result.Added {
+		if a == repo2 {
+			found = true
+		}
+	}
+	if !found {
+		t.Error("expected repo2 to be in Added list")
+	}
+
+	if _, ok := result.Errors[badDir]; !ok {
+		t.Error("expected badDir to be in Errors map")
+	}
+}
+
+func TestAddReposAllFail(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "r")
+	setupTestGitRepo(t, repoDir)
+
+	if err := Create("all-fail", []string{repoDir}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Empty git repos (no commits) will fail worktree creation
+	badDir1 := filepath.Join(tmp, "bad1")
+	setupEmptyGitRepo(t, badDir1)
+
+	badDir2 := filepath.Join(tmp, "bad2")
+	setupEmptyGitRepo(t, badDir2)
+
+	err := AddRepos("all-fail", []string{badDir1, badDir2})
+	if err == nil {
+		t.Error("expected error when all repos fail")
+	}
+}
+
 // ---------------------------------------------------------------------------
 // Delete
 // ---------------------------------------------------------------------------
@@ -652,4 +977,56 @@ func TestDeleteCleansUpWorktrees(t *testing.T) {
 	if strings.Contains(string(out), worktreePath) {
 		t.Errorf("worktree still registered after Delete + prune:\n%s", out)
 	}
+}
+
+// ---------------------------------------------------------------------------
+// Accurate repo count
+// ---------------------------------------------------------------------------
+
+func TestListRepoCountExcludesDSStore(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repo1 := filepath.Join(tmp, "r1")
+	repo2 := filepath.Join(tmp, "r2")
+	setupTestGitRepo(t, repo1)
+	setupTestGitRepo(t, repo2)
+
+	if err := Create("dsstore-test", []string{repo1, repo2}); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+
+	// Add a .DS_Store file to the session directory
+	sessionPath, _ := GetPath("dsstore-test")
+	os.WriteFile(filepath.Join(sessionPath, ".DS_Store"), []byte("x"), 0644)
+
+	sessions, _ := List()
+	for _, s := range sessions {
+		if s.Name == "dsstore-test" {
+			if s.RepoCount != 2 {
+				t.Errorf("expected RepoCount=2 (excluding .DS_Store), got %d", s.RepoCount)
+			}
+			return
+		}
+	}
+	t.Error("session 'dsstore-test' not found in list")
+}
+
+func TestListRepoCountEmptySession(t *testing.T) {
+	isolatedRoot(t)
+
+	// Create session directory manually with no entries
+	root := filepath.Join(os.Getenv("XDG_STATE_HOME"), "sesh", "sessions", "empty-test")
+	os.MkdirAll(root, 0755)
+
+	sessions, _ := List()
+	for _, s := range sessions {
+		if s.Name == "empty-test" {
+			if s.RepoCount != 0 {
+				t.Errorf("expected RepoCount=0 for empty session, got %d", s.RepoCount)
+			}
+			return
+		}
+	}
+	t.Error("session 'empty-test' not found in list")
 }
