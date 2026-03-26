@@ -3,8 +3,8 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/roshbhatia/sesh/internal/session"
-	"github.com/roshbhatia/sesh/internal/ui"
+	"github.com/roshbhatia/seshy/internal/session"
+	"github.com/roshbhatia/seshy/internal/ui"
 	"github.com/spf13/cobra"
 )
 

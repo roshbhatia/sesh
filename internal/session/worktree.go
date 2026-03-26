@@ -28,42 +28,36 @@ func gitExec(repoPath string, args ...string) (string, error) {
 	return strings.TrimSpace(stdout.String()), nil
 }
 
-// IsGitRepo checks if a path is a git repository
+// IsGitRepo checks if a path is a git repository.
 func IsGitRepo(path string) bool {
 	_, err := gitExec(path, "rev-parse", "--git-dir")
 	return err == nil
 }
 
-// GetRepoBasename returns the basename of a repository path
+// GetRepoBasename returns the basename of a repository path.
 func GetRepoBasename(path string) string {
 	return filepath.Base(path)
 }
 
-// disambiguatedName generates a unique worktree directory name for a repo
-// within a session directory. If the simple basename collides with an existing
-// entry, it prefixes with the parent directory name. If that also collides,
-// it appends a numeric suffix.
-func disambiguatedName(repoPath, sessionPath, sessionName string) string {
+// disambiguatedName generates a unique worktree directory name using bare basename.
+// Tries: basename → <parent>-<basename> → <basename>-2, -3, etc.
+func disambiguatedName(repoPath, sessionPath string) string {
 	basename := GetRepoBasename(repoPath)
-	candidate := fmt.Sprintf("%s-%s", basename, sessionName)
 
-	// Check if the simple name is available
-	if _, err := os.Stat(filepath.Join(sessionPath, candidate)); os.IsNotExist(err) {
-		return candidate
+	if _, err := os.Stat(filepath.Join(sessionPath, basename)); os.IsNotExist(err) {
+		return basename
 	}
 
-	// Try parent directory prefix
 	parent := filepath.Base(filepath.Dir(repoPath))
 	if parent != "" && parent != "." && parent != "/" {
-		candidate = fmt.Sprintf("%s-%s-%s", parent, basename, sessionName)
+		candidate := fmt.Sprintf("%s-%s", parent, basename)
 		if _, err := os.Stat(filepath.Join(sessionPath, candidate)); os.IsNotExist(err) {
 			return candidate
 		}
 	}
 
-	// Numeric suffix fallback
 	for i := 2; ; i++ {
-		candidate = fmt.Sprintf("%s-%d-%s", basename, i, sessionName)
+		candidate := fmt.Sprintf("%s-%d", basename, i)
 		if _, err := os.Stat(filepath.Join(sessionPath, candidate)); os.IsNotExist(err) {
 			return candidate
 		}
@@ -71,17 +65,15 @@ func disambiguatedName(repoPath, sessionPath, sessionName string) string {
 }
 
 // CreateWorktree creates a git worktree for the given repo in the session directory.
-// It uses a session-scoped branch named sesh/<session>/<basename> from the current HEAD.
-func CreateWorktree(repoPath, sessionPath, sessionName string) (string, error) {
-	worktreeName := disambiguatedName(repoPath, sessionPath, sessionName)
+// branchName is a pre-rendered branch name (from template or --branch flag).
+func CreateWorktree(repoPath, sessionPath, branchName string) (string, error) {
+	worktreeName := disambiguatedName(repoPath, sessionPath)
 	worktreePath := filepath.Join(sessionPath, worktreeName)
-	basename := GetRepoBasename(repoPath)
-	branchName := fmt.Sprintf("sesh/%s/%s", sessionName, basename)
 
 	// Primary strategy: create a new branch from HEAD
 	_, err := gitExec(repoPath, "worktree", "add", worktreePath, "-b", branchName, "HEAD")
 	if err != nil {
-		// Fallback: branch already exists (e.g. from a previously deleted session), reuse it
+		// Fallback: branch already exists, reuse it
 		_, err2 := gitExec(repoPath, "worktree", "add", worktreePath, branchName)
 		if err2 != nil {
 			return "", fmt.Errorf("failed to create worktree (primary: %w) (fallback: %v)", err, err2)
@@ -92,18 +84,15 @@ func CreateWorktree(repoPath, sessionPath, sessionName string) (string, error) {
 }
 
 // CreateSymlink creates a symlink for non-git directories.
-// Uses disambiguation to avoid collisions with existing entries.
 func CreateSymlink(target, sessionPath string) (string, error) {
 	basename := filepath.Base(target)
 	linkPath := filepath.Join(sessionPath, basename)
 
-	// If simple name collides, disambiguate
 	if _, err := os.Stat(linkPath); err == nil {
 		parent := filepath.Base(filepath.Dir(target))
 		if parent != "" && parent != "." && parent != "/" {
 			linkPath = filepath.Join(sessionPath, fmt.Sprintf("%s-%s", parent, basename))
 		}
-		// If still collides, numeric suffix
 		if _, err := os.Stat(linkPath); err == nil {
 			for i := 2; ; i++ {
 				candidate := filepath.Join(sessionPath, fmt.Sprintf("%s-%d", basename, i))
@@ -118,11 +107,10 @@ func CreateSymlink(target, sessionPath string) (string, error) {
 	if err := os.Symlink(target, linkPath); err != nil {
 		return "", fmt.Errorf("failed to create symlink for %s: %w", target, err)
 	}
-
 	return linkPath, nil
 }
 
-// CleanupWorktrees removes all git worktrees in a session directory
+// CleanupWorktrees removes all git worktrees in a session directory and deletes their branches.
 func CleanupWorktrees(sessionPath string) error {
 	entries, err := os.ReadDir(sessionPath)
 	if err != nil {
@@ -136,47 +124,51 @@ func CleanupWorktrees(sessionPath string) error {
 
 		entryPath := filepath.Join(sessionPath, entry.Name())
 
-		// Check if this is a git worktree
 		_, err := gitExec(entryPath, "rev-parse", "--is-inside-work-tree")
 		if err != nil {
 			continue
 		}
 
-		// Get the git directory to find the main repo
+		// Get the branch name before removing the worktree
+		branchName, _ := gitExec(entryPath, "rev-parse", "--abbrev-ref", "HEAD")
+
 		gitCommonDir, err := gitExec(entryPath, "rev-parse", "--git-common-dir")
 		if err != nil {
 			continue
 		}
 
-		// git-common-dir returns the .git dir of the main repo; its parent is the repo root
 		mainRepoPath := filepath.Dir(gitCommonDir)
 
 		// Remove the worktree
 		_, removeErr := gitExec(mainRepoPath, "worktree", "remove", entryPath, "--force")
 		if removeErr != nil {
-			// If removal fails, try to prune
 			gitExec(mainRepoPath, "worktree", "prune")
+		}
+
+		// Delete the branch (non-fatal on failure)
+		if branchName != "" && branchName != "HEAD" {
+			// Check if this branch is the current branch of the main repo
+			mainBranch, _ := gitExec(mainRepoPath, "rev-parse", "--abbrev-ref", "HEAD")
+			if mainBranch != branchName {
+				gitExec(mainRepoPath, "branch", "-D", branchName)
+			}
+			// If it's the current branch, skip deletion (can't delete checked-out branch)
 		}
 	}
 
 	return nil
 }
 
-// GetWorktreeMainRepo finds the main repository for a worktree
+// GetWorktreeMainRepo finds the main repository for a worktree.
 func GetWorktreeMainRepo(worktreePath string) (string, error) {
 	gitCommonDir, err := gitExec(worktreePath, "rev-parse", "--git-common-dir")
 	if err != nil {
 		return "", err
 	}
-
-	// The main repo is the parent of the .git directory
-	mainRepoPath := filepath.Dir(gitCommonDir)
-	return mainRepoPath, nil
+	return filepath.Dir(gitCommonDir), nil
 }
 
 // ListRepoSources returns the resolved real paths for all repo sources in a session.
-// For worktrees, it queries git rev-parse --git-common-dir to find the parent repo.
-// For symlinks, it resolves the link target.
 func ListRepoSources(sessionPath string) ([]string, error) {
 	entries, err := os.ReadDir(sessionPath)
 	if err != nil {
@@ -193,7 +185,6 @@ func ListRepoSources(sessionPath string) ([]string, error) {
 		}
 
 		if info.Mode()&os.ModeSymlink != 0 {
-			// Symlink: resolve target
 			target, err := os.Readlink(entryPath)
 			if err != nil {
 				continue
@@ -210,7 +201,6 @@ func ListRepoSources(sessionPath string) ([]string, error) {
 			continue
 		}
 
-		// Directory: check if it's a git worktree
 		gitCommonDir, err := gitExec(entryPath, "rev-parse", "--git-common-dir")
 		if err != nil {
 			continue

@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/roshbhatia/sesh/internal/session"
-	"github.com/roshbhatia/sesh/internal/ui"
+	"github.com/roshbhatia/seshy/internal/session"
+	"github.com/roshbhatia/seshy/internal/ui"
 	"github.com/spf13/cobra"
 )
 
@@ -14,7 +14,7 @@ const version = "3.0.0"
 var greedyQuery string
 
 var rootCmd = &cobra.Command{
-	Use:     "sesh",
+	Use:     "sy",
 	Short:   "Session manager for multi-repo development",
 	Version: version,
 	RunE: func(cmd *cobra.Command, args []string) error {
@@ -32,14 +32,14 @@ var rootCmd = &cobra.Command{
 			return nil
 		}
 
-		// Default: show list (same as `sesh list`)
+		// Default: show list (same as `sy list`)
 		return printSessionList(sessions)
 	},
 }
 
 func printSessionList(sessions []session.Session) error {
 	if len(sessions) == 0 {
-		fmt.Println(ui.Info("No sessions yet. Create one with " + ui.AccentBold.Render("sesh new <name>")))
+		fmt.Println(ui.Info("No sessions yet. Create one with " + ui.AccentBold.Render("sy new <name>")))
 		return nil
 	}
 
@@ -82,6 +82,6 @@ func Execute() error {
 }
 
 func init() {
-	rootCmd.SetVersionTemplate(fmt.Sprintf("sesh version %s\n", version))
+	rootCmd.SetVersionTemplate(fmt.Sprintf("sy version %s\n", version))
 	rootCmd.Flags().StringVar(&greedyQuery, "greedy", "", "Fuzzy-match a session name and print its path")
 }

@@ -4,28 +4,29 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/charmbracelet/bubbles/list"
 	tea "github.com/charmbracelet/bubbletea"
 	"github.com/charmbracelet/lipgloss"
-	"github.com/roshbhatia/sesh/internal/ui"
+	"github.com/roshbhatia/seshy/internal/ui"
 )
 
 // ── styles ──────────────────────────────────────────────────────────────
 
 var (
 	titleStyle     = lipgloss.NewStyle().MarginLeft(2).Foreground(ui.ColorPurple).Bold(true)
-	itemStyle      = lipgloss.NewStyle().PaddingLeft(4)
-	selectedStyle  = lipgloss.NewStyle().PaddingLeft(2).Foreground(ui.ColorPurple).Bold(true)
-	checkedStyle   = lipgloss.NewStyle().PaddingLeft(4).Foreground(ui.ColorGreen)
-	dimStyle       = lipgloss.NewStyle().PaddingLeft(4).Foreground(ui.ColorGray)
 	paginatorStyle = list.DefaultStyles().PaginationStyle.PaddingLeft(4)
 	helpStyle      = list.DefaultStyles().HelpStyle.PaddingLeft(4).PaddingBottom(1)
 )
 
 // ── items ───────────────────────────────────────────────────────────────
 
-type item struct{ value string }
+// item carries a display value and its original index for stable identity.
+type item struct {
+	value    string
+	origIdx  int
+}
 
 func (i item) FilterValue() string { return i.value }
 
@@ -40,6 +41,9 @@ func (i descItem) FilterValue() string { return i.title }
 
 // ── delegates ───────────────────────────────────────────────────────────
 
+// itemDelegate renders single-select items.
+// The FilterValue text is rendered as the primary content, with cursor
+// indication via a styled prefix column so filter highlights align.
 type itemDelegate struct{}
 
 func (d itemDelegate) Height() int                             { return 1 }
@@ -50,15 +54,18 @@ func (d itemDelegate) Render(w io.Writer, m list.Model, index int, listItem list
 	if !ok {
 		return
 	}
+	cursor := "  "
 	if index == m.Index() {
-		fmt.Fprint(w, selectedStyle.Render("▸ "+i.value))
-	} else {
-		fmt.Fprint(w, itemStyle.Render(i.value))
+		cursor = lipgloss.NewStyle().Foreground(ui.ColorPurple).Bold(true).Render("▸ ")
 	}
+	text := lipgloss.NewStyle().PaddingLeft(2).Render(cursor + i.value)
+	fmt.Fprint(w, text)
 }
 
+// multiItemDelegate renders multi-select items with check state.
+// Uses origIdx from the item for stable identity across filter operations.
 type multiItemDelegate struct {
-	checked map[int]bool
+	checked map[int]bool // keyed by item.origIdx
 }
 
 func (d multiItemDelegate) Height() int                             { return 1 }
@@ -69,22 +76,25 @@ func (d multiItemDelegate) Render(w io.Writer, m list.Model, index int, listItem
 	if !ok {
 		return
 	}
-	isChecked := d.checked[index]
+	isChecked := d.checked[i.origIdx]
 	isCursor := index == m.Index()
 
-	prefix := "○ "
+	check := "○"
 	if isChecked {
-		prefix = "● "
+		check = "●"
 	}
 
-	switch {
-	case isCursor:
-		fmt.Fprint(w, selectedStyle.Render("▸ "+prefix+i.value))
-	case isChecked:
-		fmt.Fprint(w, checkedStyle.Render("  "+prefix+i.value))
-	default:
-		fmt.Fprint(w, itemStyle.Render("  "+prefix+i.value))
+	var prefix string
+	if isCursor {
+		prefix = lipgloss.NewStyle().Foreground(ui.ColorPurple).Bold(true).Render("▸ " + check + " ")
+	} else if isChecked {
+		prefix = lipgloss.NewStyle().Foreground(ui.ColorGreen).Render("  " + check + " ")
+	} else {
+		prefix = lipgloss.NewStyle().Foreground(ui.ColorGray).Render("  " + check + " ")
 	}
+
+	text := lipgloss.NewStyle().PaddingLeft(2).Render(prefix + i.value)
+	fmt.Fprint(w, text)
 }
 
 // ── models ──────────────────────────────────────────────────────────────
@@ -101,8 +111,12 @@ func (m singleModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.list.SetWidth(msg.Width)
+		m.list.SetHeight(min(m.list.Height(), msg.Height-4))
 		return m, nil
 	case tea.KeyMsg:
+		if m.list.FilterState() == list.Filtering {
+			break
+		}
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.quit = true
@@ -127,7 +141,7 @@ func (m singleModel) View() string { return "\n" + m.list.View() }
 type multiModel struct {
 	list      list.Model
 	baseTitle string
-	selected  map[int]bool
+	selected  map[int]bool // keyed by item.origIdx
 	items     []string
 	quit      bool
 }
@@ -138,20 +152,25 @@ func (m multiModel) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	switch msg := msg.(type) {
 	case tea.WindowSizeMsg:
 		m.list.SetWidth(msg.Width)
+		m.list.SetHeight(min(m.list.Height(), msg.Height-4))
 		return m, nil
 	case tea.KeyMsg:
+		if m.list.FilterState() == list.Filtering {
+			break
+		}
 		switch msg.String() {
 		case "ctrl+c", "q":
 			m.quit = true
 			return m, tea.Quit
 		case " ":
-			idx := m.list.Index()
-			if m.selected[idx] {
-				delete(m.selected, idx)
-			} else {
-				m.selected[idx] = true
+			if sel, ok := m.list.SelectedItem().(item); ok {
+				if m.selected[sel.origIdx] {
+					delete(m.selected, sel.origIdx)
+				} else {
+					m.selected[sel.origIdx] = true
+				}
+				m.list.SetDelegate(multiItemDelegate{checked: m.selected})
 			}
-			m.list.SetDelegate(multiItemDelegate{checked: m.selected})
 			return m, nil
 		case "enter":
 			return m, tea.Quit
@@ -173,6 +192,12 @@ func (m multiModel) View() string {
 
 // ── public API ──────────────────────────────────────────────────────────
 
+const defaultHeight = 20
+
+func listHeight(itemCount, perItem int) int {
+	return min(itemCount*perItem+4, defaultHeight)
+}
+
 func newList(items []list.Item, delegate list.ItemDelegate, height int) list.Model {
 	l := list.New(items, delegate, 0, height)
 	l.SetShowStatusBar(false)
@@ -190,9 +215,9 @@ func SelectOne(prompt string, items []string) (string, error) {
 	}
 	listItems := make([]list.Item, len(items))
 	for i, s := range items {
-		listItems[i] = item{value: s}
+		listItems[i] = item{value: s, origIdx: i}
 	}
-	l := newList(listItems, itemDelegate{}, min(len(items)+4, 20))
+	l := newList(listItems, itemDelegate{}, listHeight(len(items), 1))
 	l.Title = prompt
 
 	m := singleModel{list: l}
@@ -215,11 +240,11 @@ func SelectMany(prompt string, items []string) ([]string, error) {
 	}
 	listItems := make([]list.Item, len(items))
 	for i, s := range items {
-		listItems[i] = item{value: s}
+		listItems[i] = item{value: s, origIdx: i}
 	}
 	checked := make(map[int]bool)
 	baseTitle := prompt + " (space=toggle, enter=confirm)"
-	l := newList(listItems, multiItemDelegate{checked: checked}, min(len(items)+4, 20))
+	l := newList(listItems, multiItemDelegate{checked: checked}, listHeight(len(items), 1))
 	l.Title = baseTitle
 
 	m := multiModel{list: l, baseTitle: baseTitle, selected: checked, items: items}
@@ -233,8 +258,8 @@ func SelectMany(prompt string, items []string) ([]string, error) {
 		return nil, fmt.Errorf("selection cancelled")
 	}
 	out := make([]string, 0, len(final.selected))
-	for idx := range final.selected {
-		out = append(out, items[idx])
+	for origIdx := range final.selected {
+		out = append(out, items[origIdx])
 	}
 	return out, nil
 }
@@ -257,7 +282,7 @@ func SelectOneWithDescription(prompt string, items []string, descriptions []stri
 	delegate.Styles.SelectedTitle = delegate.Styles.SelectedTitle.Foreground(ui.ColorPurple).BorderLeftForeground(ui.ColorPurple)
 	delegate.Styles.SelectedDesc = delegate.Styles.SelectedDesc.Foreground(ui.ColorGray).BorderLeftForeground(ui.ColorPurple)
 
-	l := newList(listItems, delegate, min(len(items)*3+4, 24))
+	l := newList(listItems, delegate, listHeight(len(items), 3))
 	l.Title = prompt
 
 	m := singleModel{list: l}
@@ -271,4 +296,25 @@ func SelectOneWithDescription(prompt string, items []string, descriptions []stri
 		return "", fmt.Errorf("selection cancelled")
 	}
 	return final.selected, nil
+}
+
+// ── testing helpers ─────────────────────────────────────────────────────
+
+// RenderMultiItem renders a multi-select item for testing purposes.
+func RenderMultiItem(value string, origIdx int, isChecked bool, isCursor bool, cursorIdx int) string {
+	d := multiItemDelegate{checked: map[int]bool{}}
+	if isChecked {
+		d.checked[origIdx] = true
+	}
+
+	var buf strings.Builder
+	// Create a minimal list model for rendering
+	listItems := []list.Item{item{value: value, origIdx: origIdx}}
+	l := list.New(listItems, d, 80, 10)
+	if isCursor {
+		// Index 0 is the cursor position
+	}
+
+	d.Render(&buf, l, 0, listItems[0])
+	return buf.String()
 }

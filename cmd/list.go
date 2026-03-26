@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/roshbhatia/sesh/internal/session"
+	"github.com/roshbhatia/seshy/internal/session"
 	"github.com/spf13/cobra"
 )
 

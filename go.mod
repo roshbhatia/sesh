@@ -1,4 +1,4 @@
-module github.com/roshbhatia/sesh
+module github.com/roshbhatia/seshy
 
 go 1.25.5
 
@@ -9,6 +9,7 @@ require (
 	github.com/charmbracelet/lipgloss v1.1.0
 	github.com/spf13/cobra v1.8.0
 	golang.org/x/term v0.32.0
+	gopkg.in/yaml.v3 v3.0.1
 )
 
 require (

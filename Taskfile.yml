@@ -1,6 +1,6 @@
 version: "3"
 vars:
-  BINARY_NAME: sesh
+  BINARY_NAME: sy
   INSTALL_DIR: '{{.HOME}}/.local/bin'
 tasks:
   build:
@@ -22,12 +22,12 @@ tasks:
       - mkdir -p {{.INSTALL_DIR}}
       - cp bin/{{.BINARY_NAME}} {{.INSTALL_DIR}}/{{.BINARY_NAME}}
       - chmod +x {{.INSTALL_DIR}}/{{.BINARY_NAME}}
-      - echo "Installed sesh to {{.INSTALL_DIR}}/{{.BINARY_NAME}}"
+      - echo "Installed sy to {{.INSTALL_DIR}}/{{.BINARY_NAME}}"
   uninstall:
     desc: Uninstall sesh from ~/bin
     cmds:
       - rm -f {{.INSTALL_DIR}}/{{.BINARY_NAME}}
-      - echo "Uninstalled sesh"
+      - echo "Uninstalled sy"
   test:
     desc: Run all unit tests
     cmds:

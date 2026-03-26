@@ -6,11 +6,14 @@ import (
 	"os/exec"
 	"strings"
 
-	"github.com/roshbhatia/sesh/internal/picker"
-	"github.com/roshbhatia/sesh/internal/session"
-	"github.com/roshbhatia/sesh/internal/ui"
+	"github.com/roshbhatia/seshy/internal/config"
+	"github.com/roshbhatia/seshy/internal/picker"
+	"github.com/roshbhatia/seshy/internal/session"
+	"github.com/roshbhatia/seshy/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+var newBranch string
 
 var newCmd = &cobra.Command{
 	Use:   "new <name>",
@@ -39,8 +42,18 @@ var newCmd = &cobra.Command{
 			return fmt.Errorf("no repositories selected")
 		}
 
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("loading config: %w", err)
+		}
+
+		opts := session.CreateOpts{
+			BranchFormat:   cfg.BranchFormat,
+			BranchOverride: newBranch,
+		}
+
 		err = ui.RunWithSpinner("Creating worktrees", func() error {
-			return session.Create(name, repos)
+			return session.Create(name, repos, opts)
 		})
 		if err != nil {
 			return fmt.Errorf("failed to create session: %w", err)
@@ -67,5 +80,6 @@ func zoxideDirs() ([]string, error) {
 }
 
 func init() {
+	newCmd.Flags().StringVarP(&newBranch, "branch", "b", "", "Override branch name for all worktrees")
 	rootCmd.AddCommand(newCmd)
 }

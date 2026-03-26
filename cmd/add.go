@@ -5,11 +5,14 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/roshbhatia/sesh/internal/picker"
-	"github.com/roshbhatia/sesh/internal/session"
-	"github.com/roshbhatia/sesh/internal/ui"
+	"github.com/roshbhatia/seshy/internal/config"
+	"github.com/roshbhatia/seshy/internal/picker"
+	"github.com/roshbhatia/seshy/internal/session"
+	"github.com/roshbhatia/seshy/internal/ui"
 	"github.com/spf13/cobra"
 )
+
+var addBranch string
 
 var addCmd = &cobra.Command{
 	Use:   "add <name>",
@@ -42,7 +45,6 @@ var addCmd = &cobra.Command{
 			return err
 		}
 
-		// Filter out repos already in the session
 		existingSources, _ := session.ListRepoSources(sessionPath)
 		existingSet := make(map[string]bool, len(existingSources))
 		for _, s := range existingSources {
@@ -77,10 +79,20 @@ var addCmd = &cobra.Command{
 			return fmt.Errorf("no repositories selected")
 		}
 
+		cfg, err := config.Load()
+		if err != nil {
+			return fmt.Errorf("loading config: %w", err)
+		}
+
+		opts := session.CreateOpts{
+			BranchFormat:   cfg.BranchFormat,
+			BranchOverride: addBranch,
+		}
+
 		var result session.AddResult
 		err = ui.RunWithSpinner("Adding repositories", func() error {
 			var e error
-			result, e = session.AddReposResult(name, repos)
+			result, e = session.AddRepos(name, repos, opts)
 			return e
 		})
 		if err != nil {
@@ -105,5 +117,6 @@ var addCmd = &cobra.Command{
 }
 
 func init() {
+	addCmd.Flags().StringVarP(&addBranch, "branch", "b", "", "Override branch name for all worktrees")
 	rootCmd.AddCommand(addCmd)
 }

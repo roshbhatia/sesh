@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/roshbhatia/sesh/internal/session"
+	"github.com/roshbhatia/seshy/internal/session"
 )
 
 // ---------------------------------------------------------------------------
@@ -194,7 +194,7 @@ func TestListCommandShowsSessions(t *testing.T) {
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
 
-	if err := session.Create("my-session", []string{repo}); err != nil {
+	if err := session.Create("my-session", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -223,7 +223,7 @@ func TestListShowsHeaders(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("hdr-test", []string{repo})
+	session.Create("hdr-test", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	stdout, _, _ := runCmd("list")
 	for _, hdr := range []string{"SESSION", "REPOS", "MODIFIED"} {
@@ -242,7 +242,7 @@ func TestPathCommandExists(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("path-test", []string{repo})
+	session.Create("path-test", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	stdout, _, err := runCmd("path", "path-test")
 	if err != nil {
@@ -274,7 +274,7 @@ func TestDeleteCommandSuccess(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("del-me", []string{repo})
+	session.Create("del-me", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	_, _, err := runCmd("delete", "--force", "del-me")
 	if err != nil {
@@ -298,7 +298,7 @@ func TestDeleteAliasRm(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("rm-me", []string{repo})
+	session.Create("rm-me", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	_, _, err := runCmd("rm", "--force", "rm-me")
 	if err != nil {
@@ -314,7 +314,7 @@ func TestDeleteAliasRemove(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("remove-me", []string{repo})
+	session.Create("remove-me", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	_, _, err := runCmd("remove", "--force", "remove-me")
 	if err != nil {
@@ -339,11 +339,11 @@ func TestNewCommandDuplicate(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("dup", []string{repo})
+	session.Create("dup", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	// new command would invoke the interactive picker, so we test the
 	// duplicate guard through session.Create directly to avoid TTY requirement
-	if err := session.Create("dup", []string{repo}); err == nil {
+	if err := session.Create("dup", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err == nil {
 		t.Error("expected error for duplicate session name")
 	}
 }
@@ -430,7 +430,7 @@ func TestDeleteCommandNonTTYRequiresForce(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("force-test", []string{repo})
+	session.Create("force-test", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	// Without --force in non-TTY, should error
 	forceDelete = false
@@ -440,5 +440,24 @@ func TestDeleteCommandNonTTYRequiresForce(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "--force") {
 		t.Errorf("expected error to mention --force, got: %v", err)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// config command
+// ---------------------------------------------------------------------------
+
+func TestConfigCommandShowsDefaults(t *testing.T) {
+	isolatedRoot(t)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	stdout, _, err := runCmd("config")
+	if err != nil {
+		t.Fatalf("config: %v", err)
+	}
+	if !strings.Contains(stdout, "branchFormat") {
+		t.Errorf("expected 'branchFormat' in config output, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, "sy/") {
+		t.Errorf("expected 'sy/' in branch format, got: %q", stdout)
 	}
 }

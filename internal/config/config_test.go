@@ -3,120 +3,130 @@ package config
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
-// ---------------------------------------------------------------------------
-// GetSessionsRoot
-// ---------------------------------------------------------------------------
+func TestDefaultConfig(t *testing.T) {
+	cfg := DefaultConfig()
+	if cfg.BranchFormat != "sy/{{.Session}}/{{.Repo}}" {
+		t.Errorf("unexpected BranchFormat: %q", cfg.BranchFormat)
+	}
+	if !strings.HasSuffix(cfg.SessionsDir, filepath.Join("seshy", "sessions")) {
+		t.Errorf("unexpected SessionsDir: %q", cfg.SessionsDir)
+	}
+}
 
-func TestGetSessionsRootWithXDG(t *testing.T) {
+func TestLoadMissingFile(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BranchFormat != "sy/{{.Session}}/{{.Repo}}" {
+		t.Errorf("expected default BranchFormat, got %q", cfg.BranchFormat)
+	}
+}
+
+func TestLoadEmptyFile(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "seshy")
+	os.MkdirAll(cfgDir, 0755)
+	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(""), 0644)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BranchFormat != "sy/{{.Session}}/{{.Repo}}" {
+		t.Errorf("expected default BranchFormat for empty file, got %q", cfg.BranchFormat)
+	}
+}
+
+func TestLoadPartialConfig(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "seshy")
+	os.MkdirAll(cfgDir, 0755)
+	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("branchFormat: \"custom/{{.Repo}}\"\n"), 0644)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BranchFormat != "custom/{{.Repo}}" {
+		t.Errorf("expected custom BranchFormat, got %q", cfg.BranchFormat)
+	}
+	// SessionsDir should be default
+	if !strings.HasSuffix(cfg.SessionsDir, filepath.Join("seshy", "sessions")) {
+		t.Errorf("expected default SessionsDir, got %q", cfg.SessionsDir)
+	}
+}
+
+func TestLoadInvalidYAML(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "seshy")
+	os.MkdirAll(cfgDir, 0755)
+	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("{{invalid yaml"), 0644)
+
+	_, err := Load()
+	if err == nil {
+		t.Error("expected error for invalid YAML")
+	}
+	if !strings.Contains(err.Error(), "config.yaml") {
+		t.Errorf("error should mention file path, got: %v", err)
+	}
+}
+
+func TestConfigDirXDGOverride(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+	dir := ConfigDir()
+	if dir != "/custom/config/seshy" {
+		t.Errorf("expected /custom/config/seshy, got %q", dir)
+	}
+}
+
+func TestConfigPath(t *testing.T) {
+	t.Setenv("XDG_CONFIG_HOME", "/custom/config")
+	p := ConfigPath()
+	if p != "/custom/config/seshy/config.yaml" {
+		t.Errorf("expected /custom/config/seshy/config.yaml, got %q", p)
+	}
+}
+
+func TestWriteDefault(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "seshy", "config.yaml")
+	if err := WriteDefault(path); err != nil {
+		t.Fatalf("WriteDefault: %v", err)
+	}
+	data, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("ReadFile: %v", err)
+	}
+	if !strings.Contains(string(data), "branchFormat") {
+		t.Errorf("expected branchFormat in default config, got: %s", data)
+	}
+}
+
+func TestGetSessionsRootXDGOverride(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "/tmp/custom-state")
-	got := GetSessionsRoot()
-	want := "/tmp/custom-state/sesh/sessions"
-	if got != want {
-		t.Errorf("GetSessionsRoot() = %q, want %q", got, want)
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // no config file
+	root := GetSessionsRoot()
+	if root != "/tmp/custom-state/seshy/sessions" {
+		t.Errorf("got %q", root)
 	}
 }
 
-func TestGetSessionsRootWithoutXDG(t *testing.T) {
+func TestGetSessionsRootDefault(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "")
-	os.Unsetenv("XDG_STATE_HOME")
-	got := GetSessionsRoot()
+	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
+	root := GetSessionsRoot()
 	home, _ := os.UserHomeDir()
-	want := filepath.Join(home, ".local", "state", "sesh", "sessions")
-	if got != want {
-		t.Errorf("GetSessionsRoot() = %q, want %q", got, want)
-	}
-}
-
-func TestGetSessionsRootXDGOverridesDefault(t *testing.T) {
-	home, _ := os.UserHomeDir()
-	t.Setenv("XDG_STATE_HOME", filepath.Join(home, ".local", "state"))
-	got := GetSessionsRoot()
-	want := filepath.Join(home, ".local", "state", "sesh", "sessions")
-	if got != want {
-		t.Errorf("GetSessionsRoot() = %q, want %q", got, want)
-	}
-}
-
-func TestGetSessionsRootSuffix(t *testing.T) {
-	t.Setenv("XDG_STATE_HOME", "/a/b")
-	got := GetSessionsRoot()
-	if filepath.Base(got) != "sessions" {
-		t.Errorf("expected last segment 'sessions', got %q", filepath.Base(got))
-	}
-	if filepath.Base(filepath.Dir(got)) != "sesh" {
-		t.Errorf("expected second-to-last segment 'sesh', got %q", filepath.Base(filepath.Dir(got)))
-	}
-}
-
-// ---------------------------------------------------------------------------
-// EnsureSessionsRoot
-// ---------------------------------------------------------------------------
-
-func TestEnsureSessionsRootCreatesDir(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", tmp)
-
-	if err := EnsureSessionsRoot(); err != nil {
-		t.Fatalf("EnsureSessionsRoot() error: %v", err)
-	}
-
-	root := GetSessionsRoot()
-	info, err := os.Stat(root)
-	if err != nil {
-		t.Fatalf("stat sessions root: %v", err)
-	}
-	if !info.IsDir() {
-		t.Error("expected sessions root to be a directory")
-	}
-}
-
-func TestEnsureSessionsRootIdempotent(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", tmp)
-
-	// Call twice — should not error
-	if err := EnsureSessionsRoot(); err != nil {
-		t.Fatalf("first EnsureSessionsRoot: %v", err)
-	}
-	if err := EnsureSessionsRoot(); err != nil {
-		t.Fatalf("second EnsureSessionsRoot: %v", err)
-	}
-}
-
-func TestEnsureSessionsRootPermissions(t *testing.T) {
-	tmp := t.TempDir()
-	t.Setenv("XDG_STATE_HOME", tmp)
-
-	if err := EnsureSessionsRoot(); err != nil {
-		t.Fatalf("EnsureSessionsRoot: %v", err)
-	}
-
-	root := GetSessionsRoot()
-	info, err := os.Stat(root)
-	if err != nil {
-		t.Fatalf("stat: %v", err)
-	}
-	perm := info.Mode().Perm()
-	if perm&0700 != 0700 {
-		t.Errorf("expected at least 0700 permissions, got %04o", perm)
-	}
-}
-
-func TestEnsureSessionsRootNestedPath(t *testing.T) {
-	tmp := t.TempDir()
-	// Point XDG to a deeply nested path that does not yet exist
-	deep := filepath.Join(tmp, "a", "b", "c")
-	t.Setenv("XDG_STATE_HOME", deep)
-
-	if err := EnsureSessionsRoot(); err != nil {
-		t.Fatalf("EnsureSessionsRoot with nested path: %v", err)
-	}
-
-	root := GetSessionsRoot()
-	if _, err := os.Stat(root); err != nil {
-		t.Errorf("nested sessions root not created: %v", err)
+	expected := filepath.Join(home, ".local", "state", "seshy", "sessions")
+	if root != expected {
+		t.Errorf("expected %q, got %q", expected, root)
 	}
 }

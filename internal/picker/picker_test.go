@@ -1,9 +1,12 @@
 package picker
 
-import "testing"
+import (
+	"strings"
+	"testing"
+)
 
 func TestItemFilterValue(t *testing.T) {
-	i := item{value: "hello"}
+	i := item{value: "hello", origIdx: 0}
 	if i.FilterValue() != "hello" {
 		t.Errorf("expected 'hello', got %q", i.FilterValue())
 	}
@@ -48,5 +51,26 @@ func TestSelectOneWithDescriptionEmptyItems(t *testing.T) {
 	_, err := SelectOneWithDescription("prompt", []string{}, []string{})
 	if err == nil {
 		t.Error("expected error for empty items")
+	}
+}
+
+func TestMultiItemRenderChecked(t *testing.T) {
+	out := RenderMultiItem("my-repo", 0, true, false, -1)
+	if !strings.Contains(out, "●") {
+		t.Errorf("expected ● for checked item, got %q", out)
+	}
+}
+
+func TestMultiItemRenderUnchecked(t *testing.T) {
+	out := RenderMultiItem("my-repo", 0, false, false, -1)
+	if !strings.Contains(out, "○") {
+		t.Errorf("expected ○ for unchecked item, got %q", out)
+	}
+}
+
+func TestItemOrigIdx(t *testing.T) {
+	i := item{value: "test", origIdx: 5}
+	if i.origIdx != 5 {
+		t.Errorf("expected origIdx 5, got %d", i.origIdx)
 	}
 }
