@@ -17,7 +17,7 @@ var configEditCmd = &cobra.Command{
 
 		// Create default config if missing
 		if _, err := os.Stat(path); os.IsNotExist(err) {
-			if err := config.WriteDefault(path); err != nil {
+			if err := config.WriteDefault(); err != nil {
 				return fmt.Errorf("creating default config: %w", err)
 			}
 		}

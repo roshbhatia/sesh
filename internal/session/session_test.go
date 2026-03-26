@@ -550,7 +550,7 @@ func TestExistsAndGetPath(t *testing.T) {
 	repoDir := filepath.Join(tmp, "r")
 	setupTestGitRepo(t, repoDir)
 
-	if err := Create("exist-test", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("exist-test", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -593,7 +593,7 @@ func TestCreateWithGitRepo(t *testing.T) {
 	repoDir := filepath.Join(tmp, "myrepo")
 	setupTestGitRepo(t, repoDir)
 
-	if err := Create("create-git", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("create-git", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -611,7 +611,7 @@ func TestCreateWithNonGitDir(t *testing.T) {
 	plainDir := filepath.Join(tmp, "plain")
 	os.MkdirAll(plainDir, 0755)
 
-	if err := Create("create-plain", []string{plainDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("create-plain", []string{plainDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -633,17 +633,17 @@ func TestCreateDuplicateErrors(t *testing.T) {
 	repoDir := filepath.Join(tmp, "r")
 	setupTestGitRepo(t, repoDir)
 
-	if err := Create("dup-session", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("dup-session", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("first Create: %v", err)
 	}
-	if err := Create("dup-session", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err == nil {
+	if _, err := Create("dup-session", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err == nil {
 		t.Error("expected error on duplicate Create")
 	}
 }
 
 func TestCreateInvalidName(t *testing.T) {
 	isolatedRoot(t)
-	if err := Create("bad name!", []string{}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err == nil {
+	if _, err := Create("bad name!", []string{}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err == nil {
 		t.Error("expected error for invalid session name")
 	}
 }
@@ -657,7 +657,7 @@ func TestCreateMultipleRepos(t *testing.T) {
 	setupTestGitRepo(t, repo1)
 	setupTestGitRepo(t, repo2)
 
-	if err := Create("multi", []string{repo1, repo2}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("multi", []string{repo1, repo2}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -692,7 +692,7 @@ func TestListMultiple(t *testing.T) {
 	setupTestGitRepo(t, repoDir)
 
 	for _, name := range []string{"alpha", "beta", "gamma"} {
-		if err := Create(name, []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+		if _, err := Create(name, []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 			t.Fatalf("Create %s: %v", name, err)
 		}
 	}
@@ -731,7 +731,7 @@ func TestListRepoCount(t *testing.T) {
 	setupTestGitRepo(t, repo1)
 	setupTestGitRepo(t, repo2)
 
-	if err := Create("count-test", []string{repo1, repo2}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("count-test", []string{repo1, repo2}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -756,10 +756,10 @@ func TestAddRepos(t *testing.T) {
 	setupTestGitRepo(t, repo1)
 	setupTestGitRepo(t, repo2)
 
-	if err := Create("add-test", []string{repo1}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("add-test", []string{repo1}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := AddRepos("add-test", []string{repo2}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, _, err := AddRepos("add-test", []string{repo2}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("AddRepos: %v", err)
 	}
 
@@ -773,7 +773,7 @@ func TestAddRepos(t *testing.T) {
 
 func TestAddReposSessionNotFound(t *testing.T) {
 	isolatedRoot(t)
-	if _, err := AddRepos("no-such", []string{"/tmp"}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err == nil {
+	if _, _, err := AddRepos("no-such", []string{"/tmp"}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err == nil {
 		t.Error("expected error adding to nonexistent session")
 	}
 }
@@ -787,10 +787,10 @@ func TestAddReposNonGitDir(t *testing.T) {
 	plainDir := filepath.Join(tmp, "plain")
 	os.MkdirAll(plainDir, 0755)
 
-	if err := Create("add-plain", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("add-plain", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
-	if _, err := AddRepos("add-plain", []string{plainDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, _, err := AddRepos("add-plain", []string{plainDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("AddRepos with plain dir: %v", err)
 	}
 
@@ -812,12 +812,12 @@ func TestAddReposDuplicateSkips(t *testing.T) {
 	repoDir := filepath.Join(tmp, "myrepo")
 	setupTestGitRepo(t, repoDir)
 
-	if err := Create("dup-add", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("dup-add", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	// Adding the same repo again should not error (it's skipped)
-	_, err := AddRepos("dup-add", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+	_, _, err := AddRepos("dup-add", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 	if err != nil {
 		t.Fatalf("AddRepos with duplicate should not error, got: %v", err)
 	}
@@ -834,12 +834,12 @@ func TestAddReposDuplicateViaResolvedPath(t *testing.T) {
 	symlinkToRepo := filepath.Join(tmp, "repo-alias")
 	os.Symlink(repoDir, symlinkToRepo)
 
-	if err := Create("dup-resolved", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("dup-resolved", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
 	// Adding via symlink path should detect duplicate via resolved path
-	_, err := AddRepos("dup-resolved", []string{symlinkToRepo}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+	_, _, err := AddRepos("dup-resolved", []string{symlinkToRepo}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 	if err != nil {
 		t.Fatalf("AddRepos with resolved duplicate should not error, got: %v", err)
 	}
@@ -871,11 +871,11 @@ func TestAddReposPartialFailure(t *testing.T) {
 	badDir := filepath.Join(tmp, "badrepo")
 	setupEmptyGitRepo(t, badDir)
 
-	if err := Create("partial-fail", []string{repo1}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("partial-fail", []string{repo1}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
-	result, err := AddRepos("partial-fail", []string{repo2, badDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+	result, _, err := AddRepos("partial-fail", []string{repo2, badDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 	if err != nil {
 		t.Fatalf("AddReposResult session error: %v", err)
 	}
@@ -902,7 +902,7 @@ func TestAddReposAllFail(t *testing.T) {
 	repoDir := filepath.Join(tmp, "r")
 	setupTestGitRepo(t, repoDir)
 
-	if err := Create("all-fail", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("all-fail", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -913,7 +913,7 @@ func TestAddReposAllFail(t *testing.T) {
 	badDir2 := filepath.Join(tmp, "bad2")
 	setupEmptyGitRepo(t, badDir2)
 
-	result, err := AddRepos("all-fail", []string{badDir1, badDir2}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+	result, _, err := AddRepos("all-fail", []string{badDir1, badDir2}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 	if err != nil {
 		t.Fatalf("AddRepos returned unexpected error: %v", err)
 	}
@@ -933,7 +933,7 @@ func TestDelete(t *testing.T) {
 	repoDir := filepath.Join(tmp, "r")
 	setupTestGitRepo(t, repoDir)
 
-	if err := Create("del-test", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("del-test", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if err := Delete("del-test"); err != nil {
@@ -958,7 +958,7 @@ func TestDeleteCleansUpWorktrees(t *testing.T) {
 	repoDir := filepath.Join(tmp, "r")
 	setupTestGitRepo(t, repoDir)
 
-	if err := Create("wt-del", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("wt-del", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -995,7 +995,7 @@ func TestListRepoCountExcludesDSStore(t *testing.T) {
 	setupTestGitRepo(t, repo1)
 	setupTestGitRepo(t, repo2)
 
-	if err := Create("dsstore-test", []string{repo1, repo2}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("dsstore-test", []string{repo1, repo2}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -1045,7 +1045,7 @@ func TestDeleteCleansBranches(t *testing.T) {
 	repoDir := filepath.Join(tmp, "r")
 	setupTestGitRepo(t, repoDir)
 
-	if err := Create("branch-cleanup", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := Create("branch-cleanup", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -1082,7 +1082,7 @@ func TestCreateRollsBackOnFailure(t *testing.T) {
 	badRepo := filepath.Join(tmp, "bad")
 	setupEmptyGitRepo(t, badRepo)
 
-	err := Create("rollback-test", []string{goodRepo, badRepo}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+	_, err := Create("rollback-test", []string{goodRepo, badRepo}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 	if err == nil {
 		t.Fatal("expected Create to fail with bad repo")
 	}

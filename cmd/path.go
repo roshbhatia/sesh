@@ -15,7 +15,7 @@ var pathCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		if !session.Exists(name) {
-			return fmt.Errorf("session %s not found", ui.AccentBold.Render(name))
+			return fmt.Errorf("session %s not found", ui.AccentBold(name))
 		}
 		path, err := session.GetPath(name)
 		if err != nil {

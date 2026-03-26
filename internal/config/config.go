@@ -1,119 +1,129 @@
+// Package config handles seshy configuration via YAML files with XDG support.
 package config
 
 import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
 
+// HooksConfig holds lifecycle hook commands.
+type HooksConfig struct {
+	PostCreate []string `yaml:"postCreate"`
+	PostAdd    []string `yaml:"postAdd"`
+	PreDelete  []string `yaml:"preDelete"`
+}
+
 // Config holds all seshy configuration.
 type Config struct {
-	BranchFormat string `yaml:"branchFormat"`
-	SessionsDir  string `yaml:"sessionsDir"`
+	BranchFormat  string      `yaml:"branchFormat"`
+	SessionsDir   string      `yaml:"sessionsDir"`
+	RepoSource    string      `yaml:"repoSource"`
+	Picker        string      `yaml:"picker"`
+	SessionPicker string      `yaml:"sessionPicker"`
+	DefaultRepos  []string    `yaml:"defaultRepos"`
+	Hooks         HooksConfig `yaml:"hooks"`
 }
 
-// DefaultConfig returns a Config with all defaults populated.
-func DefaultConfig() *Config {
-	return &Config{
-		BranchFormat: "sy/{{.Session}}/{{.Repo}}",
-		SessionsDir:  defaultSessionsDir(),
+func defaults() Config {
+	return Config{
+		BranchFormat:  "sy/{{.Session}}/{{.Repo}}",
+		SessionsDir:   "",
+		RepoSource:    "zoxide query --list",
+		Picker:        "fzf --multi --height=40% --reverse --prompt='repo > '",
+		SessionPicker: "fzf --height=40% --reverse --prompt='session > '",
 	}
 }
 
-func defaultSessionsDir() string {
-	stateHome := os.Getenv("XDG_STATE_HOME")
-	if stateHome == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			panic(err)
-		}
-		stateHome = filepath.Join(home, ".local", "state")
-	}
-	return filepath.Join(stateHome, "seshy", "sessions")
-}
-
-// ConfigDir returns the config directory path following XDG.
+// ConfigDir returns the seshy config directory.
 func ConfigDir() string {
-	configHome := os.Getenv("XDG_CONFIG_HOME")
-	if configHome == "" {
-		home, err := os.UserHomeDir()
-		if err != nil {
-			panic(err)
-		}
-		configHome = filepath.Join(home, ".config")
+	if xdg := os.Getenv("XDG_CONFIG_HOME"); xdg != "" {
+		return filepath.Join(xdg, "seshy")
 	}
-	return filepath.Join(configHome, "seshy")
+	home, _ := os.UserHomeDir()
+	return filepath.Join(home, ".config", "seshy")
 }
 
-// ConfigPath returns the full path to the config file.
+// ConfigPath returns the path to config.yaml.
 func ConfigPath() string {
 	return filepath.Join(ConfigDir(), "config.yaml")
 }
 
-// Load reads the config file and merges with defaults.
-// Missing file → defaults. Invalid YAML → error with path.
+// Load reads config from disk and merges with defaults.
 func Load() (*Config, error) {
-	cfg := DefaultConfig()
-
+	cfg := defaults()
 	data, err := os.ReadFile(ConfigPath())
 	if err != nil {
 		if os.IsNotExist(err) {
-			return cfg, nil
+			return &cfg, nil
 		}
-		return nil, fmt.Errorf("reading config %s: %w", ConfigPath(), err)
+		return nil, fmt.Errorf("reading config: %w", err)
+	}
+	if err := yaml.Unmarshal(data, &cfg); err != nil {
+		return nil, fmt.Errorf("parsing config: %w", err)
 	}
 
-	if len(data) == 0 {
-		return cfg, nil
+	// Apply defaults for empty string fields
+	d := defaults()
+	if cfg.BranchFormat == "" {
+		cfg.BranchFormat = d.BranchFormat
+	}
+	if cfg.RepoSource == "" {
+		cfg.RepoSource = d.RepoSource
+	}
+	if cfg.Picker == "" {
+		cfg.Picker = d.Picker
+	}
+	if cfg.SessionPicker == "" {
+		cfg.SessionPicker = d.SessionPicker
 	}
 
-	var fileCfg Config
-	if err := yaml.Unmarshal(data, &fileCfg); err != nil {
-		return nil, fmt.Errorf("parsing config %s: %w", ConfigPath(), err)
+	// Tilde expansion for default repos
+	for i, p := range cfg.DefaultRepos {
+		cfg.DefaultRepos[i] = expandTilde(p)
 	}
 
-	// Merge: file values override defaults when non-zero
-	if fileCfg.BranchFormat != "" {
-		cfg.BranchFormat = fileCfg.BranchFormat
-	}
-	if fileCfg.SessionsDir != "" {
-		cfg.SessionsDir = fileCfg.SessionsDir
-	}
-
-	return cfg, nil
+	return &cfg, nil
 }
 
-// WriteDefault writes a commented default config file to the given path.
-func WriteDefault(path string) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0755); err != nil {
-		return fmt.Errorf("creating config directory: %w", err)
+func expandTilde(path string) string {
+	if strings.HasPrefix(path, "~/") {
+		home, _ := os.UserHomeDir()
+		return home + path[1:]
 	}
-
-	content := `# seshy configuration
-# See: sy config
-
-# Branch naming template for worktrees.
-# Variables: {{.Session}}, {{.Repo}}, {{.User}}
-# branchFormat: "sy/{{.Session}}/{{.Repo}}"
-
-# Sessions storage directory.
-# sessionsDir: "` + defaultSessionsDir() + `"
-`
-	return os.WriteFile(path, []byte(content), 0644)
+	return path
 }
 
-// GetSessionsRoot returns the sessions root directory (convenience wrapper).
-func GetSessionsRoot() string {
-	cfg, err := Load()
+// WriteDefault writes a default config file.
+func WriteDefault() error {
+	dir := ConfigDir()
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	cfg := defaults()
+	data, err := yaml.Marshal(&cfg)
 	if err != nil {
-		return defaultSessionsDir()
+		return err
 	}
-	return cfg.SessionsDir
+	return os.WriteFile(ConfigPath(), data, 0644)
 }
 
-// EnsureSessionsRoot creates the sessions root directory if it doesn't exist.
+// GetSessionsRoot returns the sessions directory.
+func GetSessionsRoot() string {
+	var base string
+	if xdg := os.Getenv("XDG_STATE_HOME"); xdg != "" {
+		base = xdg
+	} else {
+		home, _ := os.UserHomeDir()
+		base = filepath.Join(home, ".local", "state")
+	}
+	return filepath.Join(base, "seshy", "sessions")
+}
+
+// EnsureSessionsRoot creates the sessions directory if it doesn't exist.
 func EnsureSessionsRoot() error {
 	return os.MkdirAll(GetSessionsRoot(), 0755)
 }

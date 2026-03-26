@@ -9,7 +9,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "3.0.0"
+const version = "4.0.0"
 
 var greedyQuery string
 
@@ -33,30 +33,56 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Default: show list (same as `sy list`)
-		return printSessionList(sessions)
+		return printSessionList(sessions, "")
 	},
 }
 
-func printSessionList(sessions []session.Session) error {
-	if len(sessions) == 0 {
-		fmt.Println(ui.Info("No sessions yet. Create one with " + ui.AccentBold.Render("sy new <name>")))
+func printSessionList(sessions []session.Session, format string) error {
+	switch format {
+	case "json":
+		return printSessionsJSON(sessions)
+	case "names":
+		for _, s := range sessions {
+			fmt.Println(s.Name)
+		}
+		return nil
+	case "paths":
+		for _, s := range sessions {
+			fmt.Println(s.Path)
+		}
 		return nil
 	}
 
-	headers := []string{"SESSION", "REPOS", "MODIFIED"}
-	rows := make([][]string, len(sessions))
+	// Default: human-readable table
+	if len(sessions) == 0 {
+		fmt.Println(ui.Info("No sessions yet. Create one with " + ui.AccentBold("sy new <name>")))
+		return nil
+	}
+
+	// Calculate column widths
+	nameW, reposW := len("SESSION"), len("REPOS")
+	rows := make([]struct{ name, repos, modified string }, len(sessions))
 	for i, s := range sessions {
-		rows[i] = []string{
-			s.Name,
-			fmt.Sprintf("%d", s.RepoCount),
-			formatRelativeTime(s.LastModified),
+		rows[i].name = s.Name
+		rows[i].repos = fmt.Sprintf("%d", s.RepoCount)
+		rows[i].modified = formatRelativeTime(s.LastModified)
+		if len(rows[i].name) > nameW {
+			nameW = len(rows[i].name)
+		}
+		if len(rows[i].repos) > reposW {
+			reposW = len(rows[i].repos)
 		}
 	}
-	fmt.Println(ui.NewTable(headers, rows))
+
+	fmtStr := fmt.Sprintf("%%-%ds  %%-%ds  %%s\n", nameW, reposW)
+	fmt.Printf(fmtStr, ui.Color(ui.ColorPurple, "SESSION"), ui.Color(ui.ColorPurple, "REPOS"), ui.Color(ui.ColorPurple, "MODIFIED"))
+	for _, r := range rows {
+		fmt.Printf(fmtStr, r.name, r.repos, ui.Faint(r.modified))
+	}
 	return nil
 }
 
-// greedyMatch returns the best session matching query: exact → prefix → substring (case-insensitive).
+// greedyMatch returns the best session matching query: exact > prefix > substring (case-insensitive).
 func greedyMatch(query string, sessions []session.Session) *session.Session {
 	q := strings.ToLower(query)
 	for i, s := range sessions {

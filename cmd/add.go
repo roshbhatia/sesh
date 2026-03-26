@@ -1,23 +1,28 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/roshbhatia/seshy/internal/config"
-	"github.com/roshbhatia/seshy/internal/picker"
+	"github.com/roshbhatia/seshy/internal/hook"
 	"github.com/roshbhatia/seshy/internal/session"
+	"github.com/roshbhatia/seshy/internal/tmpl"
 	"github.com/roshbhatia/seshy/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-var addBranch string
+var (
+	addBranch string
+	addStdin  bool
+)
 
 var addCmd = &cobra.Command{
-	Use:   "add <name>",
+	Use:   "add <name> [repos...]",
 	Short: "Add repositories to a session",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MinimumNArgs(1),
 	ValidArgsFunction: func(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 		if len(args) != 0 {
 			return nil, cobra.ShellCompDirectiveNoFileComp
@@ -32,7 +37,7 @@ var addCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 		if !session.Exists(name) {
-			return fmt.Errorf("session %s not found", ui.AccentBold.Render(name))
+			return fmt.Errorf("session %s not found", ui.AccentBold(name))
 		}
 
 		sessionPath, err := session.GetPath(name)
@@ -40,48 +45,64 @@ var addCmd = &cobra.Command{
 			return err
 		}
 
-		dirs, err := zoxideDirs()
-		if err != nil {
-			return err
-		}
-
-		existingSources, _ := session.ListRepoSources(sessionPath)
-		existingSet := make(map[string]bool, len(existingSources))
-		for _, s := range existingSources {
-			resolved, err := filepath.EvalSymlinks(s)
-			if err != nil {
-				resolved = s
-			}
-			existingSet[resolved] = true
-		}
-
-		var available []string
-		for _, d := range dirs {
-			resolved, err := filepath.EvalSymlinks(d)
-			if err != nil {
-				resolved = d
-			}
-			if !existingSet[resolved] {
-				available = append(available, d)
-			}
-		}
-
-		if len(available) == 0 {
-			fmt.Fprintln(os.Stderr, ui.Info("All available repositories are already in the session."))
-			return nil
-		}
-
-		repos, err := picker.SelectMany("Select repositories to add", available)
-		if err != nil {
-			return fmt.Errorf("repository selection: %w", err)
-		}
-		if len(repos) == 0 {
-			return fmt.Errorf("no repositories selected")
-		}
-
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
+		}
+
+		repos := args[1:]
+
+		if addStdin {
+			scanner := bufio.NewScanner(os.Stdin)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if line != "" {
+					repos = append(repos, line)
+				}
+			}
+		}
+
+		if len(repos) == 0 {
+			candidates, err := runSource(cfg.RepoSource)
+			if err != nil {
+				return fmt.Errorf("repo source: %w", err)
+			}
+
+			// Filter out repos already in session
+			existingSources, _ := session.ListRepoSources(sessionPath)
+			existingSet := make(map[string]bool, len(existingSources))
+			for _, s := range existingSources {
+				resolved, err := filepath.EvalSymlinks(s)
+				if err != nil {
+					resolved = s
+				}
+				existingSet[resolved] = true
+			}
+			var available []string
+			for _, d := range candidates {
+				resolved, err := filepath.EvalSymlinks(d)
+				if err != nil {
+					resolved = d
+				}
+				if !existingSet[resolved] {
+					available = append(available, d)
+				}
+			}
+
+			if len(available) == 0 {
+				fmt.Fprintln(os.Stderr, ui.Info("All available repositories are already in the session."))
+				return nil
+			}
+
+			selected, err := runPicker(cfg.Picker, available)
+			if err != nil {
+				return err
+			}
+			repos = selected
+		}
+
+		if len(repos) == 0 {
+			return fmt.Errorf("no repositories selected")
 		}
 
 		opts := session.CreateOpts{
@@ -89,15 +110,32 @@ var addCmd = &cobra.Command{
 			BranchOverride: addBranch,
 		}
 
-		var result session.AddResult
-		err = ui.RunWithSpinner("Adding repositories", func() error {
-			var e error
-			result, e = session.AddRepos(name, repos, opts)
-			return e
-		})
+		result, newRepos, err := session.AddRepos(name, repos, opts)
 		if err != nil {
 			return fmt.Errorf("failed to add repositories: %w", err)
 		}
+
+		// Build template data with ALL repos (existing + new)
+		allRepos := getAllRepoInfos(sessionPath, newRepos)
+		data := session.BuildTemplateData(name, sessionPath, allRepos)
+
+		// Render per-repo templates for NEW repos only
+		repoTmplDir := filepath.Join(config.ConfigDir(), "templates", "repo")
+		for _, ri := range newRepos {
+			rd := data.ForRepo(tmpl.RepoData{Name: ri.Name, Path: ri.Path, Source: ri.SourcePath, Branch: ri.Branch})
+			if err := tmpl.RenderDir(repoTmplDir, ri.Path, rd); err != nil {
+				fmt.Fprintln(os.Stderr, ui.Warningf("template error for %s: %v", ri.Name, err))
+			}
+		}
+
+		// Re-render session templates (Repos list changed)
+		sessionTmplDir := filepath.Join(config.ConfigDir(), "templates", "session")
+		if err := tmpl.RenderSessionDir(sessionTmplDir, sessionPath, data); err != nil {
+			fmt.Fprintln(os.Stderr, ui.Warningf("session template error: %v", err))
+		}
+
+		// Run post-add hooks
+		hook.Run("post-add", cfg.Hooks.PostAdd, data, sessionPath)
 
 		for _, s := range result.Skipped {
 			fmt.Fprintln(os.Stderr, ui.Warningf("Skipped %s (already in session)", s))
@@ -106,7 +144,7 @@ var addCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, ui.Errorf("Failed %s: %v", repo, e))
 		}
 
-		fmt.Fprintln(os.Stderr, ui.Successf("Added %d/%d repo(s) to %s", len(result.Added), len(repos), ui.AccentBold.Render(name)))
+		fmt.Fprintln(os.Stderr, ui.Successf("Added %d/%d repo(s) to %s", len(result.Added), len(repos), ui.AccentBold(name)))
 		fmt.Fprintf(os.Stderr, "  %s %s\n", ui.Faint("path:"), sessionPath)
 
 		if result.Err() != nil {
@@ -116,7 +154,49 @@ var addCmd = &cobra.Command{
 	},
 }
 
+// getAllRepoInfos builds a complete list of RepoInfos by scanning the session dir.
+func getAllRepoInfos(sessionPath string, newRepos []session.RepoInfo) []session.RepoInfo {
+	sources, _ := session.ListRepoSources(sessionPath)
+	var all []session.RepoInfo
+
+	// Build map of new repos for quick lookup
+	newMap := make(map[string]session.RepoInfo, len(newRepos))
+	for _, r := range newRepos {
+		newMap[r.Path] = r
+	}
+
+	entries, err := os.ReadDir(sessionPath)
+	if err != nil {
+		return newRepos
+	}
+	for _, e := range entries {
+		if e.Name()[0] == '.' {
+			continue
+		}
+		entryPath := filepath.Join(sessionPath, e.Name())
+		if ri, ok := newMap[entryPath]; ok {
+			all = append(all, ri)
+		} else {
+			// Existing repo — find source
+			source := ""
+			for _, s := range sources {
+				if filepath.Base(s) == e.Name() || filepath.Base(entryPath) == e.Name() {
+					source = s
+					break
+				}
+			}
+			all = append(all, session.RepoInfo{
+				Name:       e.Name(),
+				Path:       entryPath,
+				SourcePath: source,
+			})
+		}
+	}
+	return all
+}
+
 func init() {
 	addCmd.Flags().StringVarP(&addBranch, "branch", "b", "", "Override branch name for all worktrees")
+	addCmd.Flags().BoolVar(&addStdin, "stdin", false, "Read repo paths from stdin")
 	rootCmd.AddCommand(addCmd)
 }

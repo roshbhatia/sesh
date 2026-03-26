@@ -10,8 +10,8 @@ func TestAddCommand(t *testing.T) {
 		t.Error("addCmd should not be nil")
 	}
 
-	if addCmd.Use != "add <name>" {
-		t.Errorf("Expected Use='add <name>', got '%s'", addCmd.Use)
+	if addCmd.Use != "add <name> [repos...]" {
+		t.Errorf("Expected Use='add <name> [repos...]', got '%s'", addCmd.Use)
 	}
 
 	if addCmd.Short == "" {

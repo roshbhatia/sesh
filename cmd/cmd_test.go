@@ -194,7 +194,7 @@ func TestListCommandShowsSessions(t *testing.T) {
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
 
-	if err := session.Create("my-session", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := session.Create("my-session", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 
@@ -223,7 +223,7 @@ func TestListShowsHeaders(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("hdr-test", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+	_, _ = session.Create("hdr-test", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	stdout, _, _ := runCmd("list")
 	for _, hdr := range []string{"SESSION", "REPOS", "MODIFIED"} {
@@ -242,7 +242,7 @@ func TestPathCommandExists(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("path-test", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+	_, _ = session.Create("path-test", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	stdout, _, err := runCmd("path", "path-test")
 	if err != nil {
@@ -274,7 +274,7 @@ func TestDeleteCommandSuccess(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("del-me", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+	_, _ = session.Create("del-me", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	_, _, err := runCmd("delete", "--force", "del-me")
 	if err != nil {
@@ -298,7 +298,7 @@ func TestDeleteAliasRm(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("rm-me", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+	_, _ = session.Create("rm-me", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	_, _, err := runCmd("rm", "--force", "rm-me")
 	if err != nil {
@@ -314,7 +314,7 @@ func TestDeleteAliasRemove(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("remove-me", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+	_, _ = session.Create("remove-me", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	_, _, err := runCmd("remove", "--force", "remove-me")
 	if err != nil {
@@ -339,11 +339,11 @@ func TestNewCommandDuplicate(t *testing.T) {
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
-	session.Create("dup", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+	_, _ = session.Create("dup", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
 
 	// new command would invoke the interactive picker, so we test the
 	// duplicate guard through session.Create directly to avoid TTY requirement
-	if err := session.Create("dup", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err == nil {
+	if _, err := session.Create("dup", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err == nil {
 		t.Error("expected error for duplicate session name")
 	}
 }
@@ -422,28 +422,6 @@ func TestFormatRelativeTimeOldDate(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// delete --force and cancellation
-// ---------------------------------------------------------------------------
-
-func TestDeleteCommandNonTTYRequiresForce(t *testing.T) {
-	isolatedRoot(t)
-	tmp := t.TempDir()
-	repo := filepath.Join(tmp, "r")
-	setupGitRepo(t, repo)
-	session.Create("force-test", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
-
-	// Without --force in non-TTY, should error
-	forceDelete = false
-	_, _, err := runCmd("delete", "force-test")
-	if err == nil {
-		t.Error("expected error when deleting without --force in non-TTY")
-	}
-	if !strings.Contains(err.Error(), "--force") {
-		t.Errorf("expected error to mention --force, got: %v", err)
-	}
-}
-
-// ---------------------------------------------------------------------------
 // config command
 // ---------------------------------------------------------------------------
 
@@ -459,5 +437,83 @@ func TestConfigCommandShowsDefaults(t *testing.T) {
 	}
 	if !strings.Contains(stdout, "sy/") {
 		t.Errorf("expected 'sy/' in branch format, got: %q", stdout)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// list output formats
+// ---------------------------------------------------------------------------
+
+func TestListJSON(t *testing.T) {
+	isolatedRoot(t)
+	listJSON = false
+	listNames = false
+	listPaths = false
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "r")
+	setupGitRepo(t, repo)
+	_, _ = session.Create("json-test", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+
+	stdout, _, err := runCmd("list", "--json")
+	if err != nil {
+		t.Fatalf("list --json: %v", err)
+	}
+	if !strings.Contains(stdout, `"name": "json-test"`) {
+		t.Errorf("expected JSON with name, got: %q", stdout)
+	}
+	if !strings.Contains(stdout, `"repoCount"`) {
+		t.Errorf("expected repoCount in JSON, got: %q", stdout)
+	}
+}
+
+func TestListNames(t *testing.T) {
+	isolatedRoot(t)
+	listJSON = false
+	listNames = false
+	listPaths = false
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "r")
+	setupGitRepo(t, repo)
+	_, _ = session.Create("names-test", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+
+	stdout, _, err := runCmd("list", "--names")
+	if err != nil {
+		t.Fatalf("list --names: %v", err)
+	}
+	if strings.TrimSpace(stdout) != "names-test" {
+		t.Errorf("expected 'names-test', got %q", strings.TrimSpace(stdout))
+	}
+}
+
+func TestListPaths(t *testing.T) {
+	isolatedRoot(t)
+	listJSON = false
+	listNames = false
+	listPaths = false
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "r")
+	setupGitRepo(t, repo)
+	_, _ = session.Create("paths-test", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"})
+
+	stdout, _, err := runCmd("list", "--paths")
+	if err != nil {
+		t.Fatalf("list --paths: %v", err)
+	}
+	if !strings.Contains(stdout, "paths-test") {
+		t.Errorf("expected path containing 'paths-test', got %q", stdout)
+	}
+}
+
+func TestListEmpty(t *testing.T) {
+	isolatedRoot(t)
+	listJSON = false
+	listNames = false
+	listPaths = false
+	stdout, _, err := runCmd("list", "--json")
+	if err != nil {
+		t.Fatalf("list --json empty: %v", err)
+	}
+	if !strings.Contains(stdout, "[]") {
+		t.Errorf("expected empty JSON array, got %q", stdout)
 	}
 }

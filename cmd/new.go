@@ -1,24 +1,28 @@
 package cmd
 
 import (
+	"bufio"
 	"fmt"
 	"os"
-	"os/exec"
-	"strings"
+	"path/filepath"
 
 	"github.com/roshbhatia/seshy/internal/config"
-	"github.com/roshbhatia/seshy/internal/picker"
+	"github.com/roshbhatia/seshy/internal/hook"
 	"github.com/roshbhatia/seshy/internal/session"
+	"github.com/roshbhatia/seshy/internal/tmpl"
 	"github.com/roshbhatia/seshy/internal/ui"
 	"github.com/spf13/cobra"
 )
 
-var newBranch string
+var (
+	newBranch string
+	newStdin  bool
+)
 
 var newCmd = &cobra.Command{
-	Use:   "new <name>",
+	Use:   "new <name> [repos...]",
 	Short: "Create a new session",
-	Args:  cobra.ExactArgs(1),
+	Args:  cobra.MinimumNArgs(1),
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
 
@@ -26,20 +30,7 @@ var newCmd = &cobra.Command{
 			return err
 		}
 		if session.Exists(name) {
-			return fmt.Errorf("session %s already exists", ui.AccentBold.Render(name))
-		}
-
-		dirs, err := zoxideDirs()
-		if err != nil {
-			return err
-		}
-
-		repos, err := picker.SelectMany("Select repositories", dirs)
-		if err != nil {
-			return fmt.Errorf("repository selection: %w", err)
-		}
-		if len(repos) == 0 {
-			return fmt.Errorf("no repositories selected")
+			return fmt.Errorf("session %s already exists", ui.AccentBold(name))
 		}
 
 		cfg, err := config.Load()
@@ -47,39 +38,75 @@ var newCmd = &cobra.Command{
 			return fmt.Errorf("loading config: %w", err)
 		}
 
+		repos := args[1:]
+
+		if newStdin {
+			scanner := bufio.NewScanner(os.Stdin)
+			for scanner.Scan() {
+				line := scanner.Text()
+				if line != "" {
+					repos = append(repos, line)
+				}
+			}
+		}
+
+		if len(repos) == 0 {
+			candidates, err := runSource(cfg.RepoSource)
+			if err != nil {
+				return fmt.Errorf("repo source: %w", err)
+			}
+			candidates = prependDefaults(cfg.DefaultRepos, candidates)
+			selected, err := runPicker(cfg.Picker, candidates)
+			if err != nil {
+				return err
+			}
+			repos = selected
+		}
+
+		if len(repos) == 0 {
+			return fmt.Errorf("no repositories selected")
+		}
+
 		opts := session.CreateOpts{
 			BranchFormat:   cfg.BranchFormat,
 			BranchOverride: newBranch,
 		}
 
-		err = ui.RunWithSpinner("Creating worktrees", func() error {
-			return session.Create(name, repos, opts)
-		})
+		repoInfos, err := session.Create(name, repos, opts)
 		if err != nil {
 			return fmt.Errorf("failed to create session: %w", err)
 		}
 
 		sessionPath, _ := session.GetPath(name)
-		fmt.Fprintln(os.Stderr, ui.Successf("Created session %s", ui.AccentBold.Render(name)))
+		data := session.BuildTemplateData(name, sessionPath, repoInfos)
+
+		// Render per-repo templates
+		repoTmplDir := filepath.Join(config.ConfigDir(), "templates", "repo")
+		for _, ri := range repoInfos {
+			rd := data.ForRepo(tmpl.RepoData{Name: ri.Name, Path: ri.Path, Source: ri.SourcePath, Branch: ri.Branch})
+			if err := tmpl.RenderDir(repoTmplDir, ri.Path, rd); err != nil {
+				fmt.Fprintln(os.Stderr, ui.Warningf("template error for %s: %v", ri.Name, err))
+			}
+		}
+
+		// Render session-level templates
+		sessionTmplDir := filepath.Join(config.ConfigDir(), "templates", "session")
+		if err := tmpl.RenderDir(sessionTmplDir, sessionPath, data); err != nil {
+			fmt.Fprintln(os.Stderr, ui.Warningf("session template error: %v", err))
+		}
+
+		// Run post-create hooks
+		hook.Run("post-create", cfg.Hooks.PostCreate, data, sessionPath)
+
+		fmt.Fprintln(os.Stderr, ui.Successf("Created session %s", ui.AccentBold(name)))
 		fmt.Fprintf(os.Stderr, "  %s %s\n", ui.Faint("path:"), sessionPath)
 		fmt.Fprintf(os.Stderr, "  %s %d\n", ui.Faint("repos:"), len(repos))
 		return nil
 	},
 }
 
-func zoxideDirs() ([]string, error) {
-	out, err := exec.Command("zoxide", "query", "--list").Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to query zoxide: %w", err)
-	}
-	dirs := strings.Split(strings.TrimSpace(string(out)), "\n")
-	if len(dirs) == 0 || (len(dirs) == 1 && dirs[0] == "") {
-		return nil, fmt.Errorf("no directories in zoxide database")
-	}
-	return dirs, nil
-}
-
 func init() {
 	newCmd.Flags().StringVarP(&newBranch, "branch", "b", "", "Override branch name for all worktrees")
+	newCmd.Flags().BoolVar(&newStdin, "stdin", false, "Read repo paths from stdin")
 	rootCmd.AddCommand(newCmd)
 }

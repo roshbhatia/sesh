@@ -1,11 +1,19 @@
 package cmd
 
 import (
+	"encoding/json"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/roshbhatia/seshy/internal/session"
 	"github.com/spf13/cobra"
+)
+
+var (
+	listJSON  bool
+	listNames bool
+	listPaths bool
 )
 
 var listCmd = &cobra.Command{
@@ -13,12 +21,51 @@ var listCmd = &cobra.Command{
 	Short:   "List all sessions",
 	Aliases: []string{"ls"},
 	RunE: func(cmd *cobra.Command, args []string) error {
+		flagCount := 0
+		if listJSON { flagCount++ }
+		if listNames { flagCount++ }
+		if listPaths { flagCount++ }
+		if flagCount > 1 {
+			return fmt.Errorf("--json, --names, and --paths are mutually exclusive")
+		}
+
 		sessions, err := session.List()
 		if err != nil {
 			return fmt.Errorf("failed to list sessions: %w", err)
 		}
-		return printSessionList(sessions)
+
+		format := ""
+		if listJSON {
+			format = "json"
+		} else if listNames {
+			format = "names"
+		} else if listPaths {
+			format = "paths"
+		}
+		return printSessionList(sessions, format)
 	},
+}
+
+type sessionJSON struct {
+	Name         string `json:"name"`
+	Path         string `json:"path"`
+	RepoCount    int    `json:"repoCount"`
+	LastModified string `json:"lastModified"`
+}
+
+func printSessionsJSON(sessions []session.Session) error {
+	out := make([]sessionJSON, len(sessions))
+	for i, s := range sessions {
+		out[i] = sessionJSON{
+			Name:         s.Name,
+			Path:         s.Path,
+			RepoCount:    s.RepoCount,
+			LastModified: s.LastModified.Format(time.RFC3339),
+		}
+	}
+	enc := json.NewEncoder(os.Stdout)
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
 }
 
 func formatRelativeTime(t time.Time) string {
@@ -50,5 +97,8 @@ func formatRelativeTime(t time.Time) string {
 }
 
 func init() {
+	listCmd.Flags().BoolVar(&listJSON, "json", false, "Output JSON")
+	listCmd.Flags().BoolVar(&listNames, "names", false, "Output session names only")
+	listCmd.Flags().BoolVar(&listPaths, "paths", false, "Output session paths only")
 	rootCmd.AddCommand(listCmd)
 }

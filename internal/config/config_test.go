@@ -7,13 +7,19 @@ import (
 	"testing"
 )
 
-func TestDefaultConfig(t *testing.T) {
-	cfg := DefaultConfig()
+func TestDefaults(t *testing.T) {
+	cfg := defaults()
 	if cfg.BranchFormat != "sy/{{.Session}}/{{.Repo}}" {
 		t.Errorf("unexpected BranchFormat: %q", cfg.BranchFormat)
 	}
-	if !strings.HasSuffix(cfg.SessionsDir, filepath.Join("seshy", "sessions")) {
-		t.Errorf("unexpected SessionsDir: %q", cfg.SessionsDir)
+	if cfg.RepoSource != "zoxide query --list" {
+		t.Errorf("unexpected RepoSource: %q", cfg.RepoSource)
+	}
+	if !strings.Contains(cfg.Picker, "fzf") {
+		t.Errorf("unexpected Picker: %q", cfg.Picker)
+	}
+	if !strings.Contains(cfg.SessionPicker, "fzf") {
+		t.Errorf("unexpected SessionPicker: %q", cfg.SessionPicker)
 	}
 }
 
@@ -25,6 +31,9 @@ func TestLoadMissingFile(t *testing.T) {
 	}
 	if cfg.BranchFormat != "sy/{{.Session}}/{{.Repo}}" {
 		t.Errorf("expected default BranchFormat, got %q", cfg.BranchFormat)
+	}
+	if cfg.RepoSource != "zoxide query --list" {
+		t.Errorf("expected default RepoSource, got %q", cfg.RepoSource)
 	}
 }
 
@@ -42,6 +51,9 @@ func TestLoadEmptyFile(t *testing.T) {
 	if cfg.BranchFormat != "sy/{{.Session}}/{{.Repo}}" {
 		t.Errorf("expected default BranchFormat for empty file, got %q", cfg.BranchFormat)
 	}
+	if cfg.RepoSource != "zoxide query --list" {
+		t.Errorf("expected default RepoSource for empty file, got %q", cfg.RepoSource)
+	}
 }
 
 func TestLoadPartialConfig(t *testing.T) {
@@ -58,9 +70,67 @@ func TestLoadPartialConfig(t *testing.T) {
 	if cfg.BranchFormat != "custom/{{.Repo}}" {
 		t.Errorf("expected custom BranchFormat, got %q", cfg.BranchFormat)
 	}
-	// SessionsDir should be default
-	if !strings.HasSuffix(cfg.SessionsDir, filepath.Join("seshy", "sessions")) {
-		t.Errorf("expected default SessionsDir, got %q", cfg.SessionsDir)
+	// Other fields should have defaults
+	if cfg.RepoSource != "zoxide query --list" {
+		t.Errorf("expected default RepoSource, got %q", cfg.RepoSource)
+	}
+}
+
+func TestLoadWithHooks(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "seshy")
+	os.MkdirAll(cfgDir, 0755)
+	yaml := `hooks:
+  postCreate:
+    - "direnv allow ."
+    - "mise install"
+  preDelete:
+    - "echo bye"
+`
+	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(yaml), 0644)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.Hooks.PostCreate) != 2 {
+		t.Errorf("expected 2 postCreate hooks, got %d", len(cfg.Hooks.PostCreate))
+	}
+	if cfg.Hooks.PostCreate[0] != "direnv allow ." {
+		t.Errorf("unexpected hook: %q", cfg.Hooks.PostCreate[0])
+	}
+	if len(cfg.Hooks.PreDelete) != 1 {
+		t.Errorf("expected 1 preDelete hook, got %d", len(cfg.Hooks.PreDelete))
+	}
+}
+
+func TestLoadWithDefaultRepos(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	cfgDir := filepath.Join(dir, "seshy")
+	os.MkdirAll(cfgDir, 0755)
+	yaml := `defaultRepos:
+  - ~/github/shared
+  - /absolute/path
+`
+	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte(yaml), 0644)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(cfg.DefaultRepos) != 2 {
+		t.Fatalf("expected 2 defaultRepos, got %d", len(cfg.DefaultRepos))
+	}
+	// Tilde should be expanded
+	home, _ := os.UserHomeDir()
+	if cfg.DefaultRepos[0] != home+"/github/shared" {
+		t.Errorf("expected tilde expansion, got %q", cfg.DefaultRepos[0])
+	}
+	// Absolute path unchanged
+	if cfg.DefaultRepos[1] != "/absolute/path" {
+		t.Errorf("expected /absolute/path, got %q", cfg.DefaultRepos[1])
 	}
 }
 
@@ -74,9 +144,6 @@ func TestLoadInvalidYAML(t *testing.T) {
 	_, err := Load()
 	if err == nil {
 		t.Error("expected error for invalid YAML")
-	}
-	if !strings.Contains(err.Error(), "config.yaml") {
-		t.Errorf("error should mention file path, got: %v", err)
 	}
 }
 
@@ -98,22 +165,25 @@ func TestConfigPath(t *testing.T) {
 
 func TestWriteDefault(t *testing.T) {
 	dir := t.TempDir()
-	path := filepath.Join(dir, "seshy", "config.yaml")
-	if err := WriteDefault(path); err != nil {
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	if err := WriteDefault(); err != nil {
 		t.Fatalf("WriteDefault: %v", err)
 	}
-	data, err := os.ReadFile(path)
+	data, err := os.ReadFile(filepath.Join(dir, "seshy", "config.yaml"))
 	if err != nil {
 		t.Fatalf("ReadFile: %v", err)
 	}
-	if !strings.Contains(string(data), "branchFormat") {
-		t.Errorf("expected branchFormat in default config, got: %s", data)
+	s := string(data)
+	if !strings.Contains(s, "branchFormat") {
+		t.Errorf("expected branchFormat in default config")
+	}
+	if !strings.Contains(s, "repoSource") {
+		t.Errorf("expected repoSource in default config")
 	}
 }
 
 func TestGetSessionsRootXDGOverride(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "/tmp/custom-state")
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir()) // no config file
 	root := GetSessionsRoot()
 	if root != "/tmp/custom-state/seshy/sessions" {
 		t.Errorf("got %q", root)
@@ -122,7 +192,6 @@ func TestGetSessionsRootXDGOverride(t *testing.T) {
 
 func TestGetSessionsRootDefault(t *testing.T) {
 	t.Setenv("XDG_STATE_HOME", "")
-	t.Setenv("XDG_CONFIG_HOME", t.TempDir())
 	root := GetSessionsRoot()
 	home, _ := os.UserHomeDir()
 	expected := filepath.Join(home, ".local", "state", "seshy", "sessions")

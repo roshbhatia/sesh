@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/roshbhatia/seshy/internal/config"
+	"github.com/roshbhatia/seshy/internal/tmpl"
 )
 
 // Session represents a seshy session.
@@ -16,6 +17,14 @@ type Session struct {
 	Path         string
 	RepoCount    int
 	LastModified time.Time
+}
+
+// RepoInfo describes a repo that was created in a session.
+type RepoInfo struct {
+	Name       string // basename in session dir
+	Path       string // absolute worktree/symlink path
+	SourcePath string // absolute original repo path
+	Branch     string // rendered branch name (empty for non-git)
 }
 
 // AddResult holds the outcome of adding multiple repos.
@@ -69,7 +78,6 @@ func Exists(name string) bool {
 }
 
 // branchForRepo computes the branch name for a repo.
-// If branchOverride is non-empty, uses it directly; otherwise renders from template.
 func branchForRepo(branchFormat, branchOverride, sessionName, repoPath string) (string, error) {
 	if branchOverride != "" {
 		if err := ValidateBranchName(branchOverride); err != nil {
@@ -82,38 +90,37 @@ func branchForRepo(branchFormat, branchOverride, sessionName, repoPath string) (
 
 // CreateOpts holds options for session creation.
 type CreateOpts struct {
-	BranchFormat   string // Go template (from config)
-	BranchOverride string // Literal override (from --branch flag)
+	BranchFormat   string
+	BranchOverride string
 }
 
-// Create creates a new session with the given repos. It is atomic: if any
-// worktree creation fails, all previously created worktrees and branches are
-// cleaned up.
-func Create(name string, repoPaths []string, opts CreateOpts) error {
+// Create creates a new session with the given repos. Atomic: on failure,
+// all previously created worktrees and branches are cleaned up.
+// Returns RepoInfo for each successfully created repo.
+func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error) {
 	if err := ValidateSessionName(name); err != nil {
-		return err
+		return nil, err
 	}
 	if Exists(name) {
-		return fmt.Errorf("session '%s' already exists", name)
+		return nil, fmt.Errorf("session '%s' already exists", name)
 	}
 
 	root := config.GetSessionsRoot()
 	sessionPath := filepath.Join(root, name)
 
 	if err := os.MkdirAll(sessionPath, 0755); err != nil {
-		return fmt.Errorf("failed to create session directory: %w", err)
+		return nil, fmt.Errorf("failed to create session directory: %w", err)
 	}
 
-	// Track created worktrees for rollback
 	type created struct {
 		worktreePath string
 		repoPath     string
 		branchName   string
 	}
 	var createdList []created
+	var repoInfos []RepoInfo
 
 	cleanup := func() {
-		// Remove worktrees and branches in reverse order
 		for i := len(createdList) - 1; i >= 0; i-- {
 			c := createdList[i]
 			if IsGitRepo(c.repoPath) && c.branchName != "" {
@@ -129,24 +136,36 @@ func Create(name string, repoPaths []string, opts CreateOpts) error {
 			branch, err := branchForRepo(opts.BranchFormat, opts.BranchOverride, name, repoPath)
 			if err != nil {
 				cleanup()
-				return fmt.Errorf("branch name for %s: %w", repoPath, err)
+				return nil, fmt.Errorf("branch name for %s: %w", repoPath, err)
 			}
 
 			wtPath, err := CreateWorktree(repoPath, sessionPath, branch)
 			if err != nil {
 				cleanup()
-				return fmt.Errorf("failed to create worktree for %s: %w", repoPath, err)
+				return nil, fmt.Errorf("failed to create worktree for %s: %w", repoPath, err)
 			}
 			createdList = append(createdList, created{worktreePath: wtPath, repoPath: repoPath, branchName: branch})
+			repoInfos = append(repoInfos, RepoInfo{
+				Name:       filepath.Base(wtPath),
+				Path:       wtPath,
+				SourcePath: repoPath,
+				Branch:     branch,
+			})
 		} else {
-			if _, err := CreateSymlink(repoPath, sessionPath); err != nil {
+			linkPath, err := CreateSymlink(repoPath, sessionPath)
+			if err != nil {
 				cleanup()
-				return fmt.Errorf("failed to create symlink for %s: %w", repoPath, err)
+				return nil, fmt.Errorf("failed to create symlink for %s: %w", repoPath, err)
 			}
+			repoInfos = append(repoInfos, RepoInfo{
+				Name:       filepath.Base(linkPath),
+				Path:       linkPath,
+				SourcePath: repoPath,
+			})
 		}
 	}
 
-	return nil
+	return repoInfos, nil
 }
 
 // List returns all sessions.
@@ -207,14 +226,15 @@ func resolveRepoPath(path string) string {
 }
 
 // AddRepos adds repositories to an existing session (best-effort).
-// Returns structured results showing what was added, skipped, or errored.
-func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, error) {
+// Returns AddResult, RepoInfo for newly added repos, and error.
+func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []RepoInfo, error) {
 	sessionPath, err := GetPath(name)
 	if err != nil {
-		return AddResult{}, err
+		return AddResult{}, nil, err
 	}
 
 	result := AddResult{Errors: make(map[string]error)}
+	var newRepos []RepoInfo
 
 	existingSources, err := ListRepoSources(sessionPath)
 	if err != nil {
@@ -238,22 +258,49 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, erro
 				result.Errors[repoPath] = err
 				continue
 			}
-			if _, err := CreateWorktree(repoPath, sessionPath, branch); err != nil {
+			wtPath, err := CreateWorktree(repoPath, sessionPath, branch)
+			if err != nil {
 				result.Errors[repoPath] = err
 				continue
 			}
+			newRepos = append(newRepos, RepoInfo{
+				Name:       filepath.Base(wtPath),
+				Path:       wtPath,
+				SourcePath: repoPath,
+				Branch:     branch,
+			})
 		} else {
-			if _, err := CreateSymlink(repoPath, sessionPath); err != nil {
+			linkPath, err := CreateSymlink(repoPath, sessionPath)
+			if err != nil {
 				result.Errors[repoPath] = err
 				continue
 			}
+			newRepos = append(newRepos, RepoInfo{
+				Name:       filepath.Base(linkPath),
+				Path:       linkPath,
+				SourcePath: repoPath,
+			})
 		}
 
 		result.Added = append(result.Added, repoPath)
 		existingSet[resolved] = true
 	}
 
-	return result, nil
+	return result, newRepos, nil
+}
+
+// BuildTemplateData creates TemplateData from session info.
+func BuildTemplateData(name, sessionPath string, repos []RepoInfo) tmpl.TemplateData {
+	repoData := make([]tmpl.RepoData, len(repos))
+	for i, r := range repos {
+		repoData[i] = tmpl.RepoData{
+			Name:   r.Name,
+			Path:   r.Path,
+			Source: r.SourcePath,
+			Branch: r.Branch,
+		}
+	}
+	return tmpl.NewTemplateData(name, sessionPath, repoData)
 }
 
 // Delete removes a session and cleans up worktrees + branches.

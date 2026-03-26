@@ -1,44 +1,32 @@
 package session
 
 import (
-	"bytes"
 	"fmt"
 	"os/user"
 	"strings"
-	"text/template"
+
+	"github.com/roshbhatia/seshy/internal/tmpl"
 )
 
-// BranchVars holds variables available in branch name templates.
-type BranchVars struct {
-	Session string
-	Repo    string
-	User    string
-}
-
 // RenderBranchName evaluates a Go template string with the given session and repo names.
-func RenderBranchName(tmpl string, session string, repo string) (string, error) {
-	t, err := template.New("branch").Parse(tmpl)
-	if err != nil {
-		return "", fmt.Errorf("invalid branch template %q: %w", tmpl, err)
-	}
-
+// Uses tmpl.RenderString for consistent template handling across the codebase.
+func RenderBranchName(tmplStr string, sessionName string, repo string) (string, error) {
 	username := ""
 	if u, err := user.Current(); err == nil {
 		username = u.Username
 	}
 
-	vars := BranchVars{
-		Session: session,
+	data := tmpl.TemplateData{
+		Session: sessionName,
 		Repo:    repo,
 		User:    username,
 	}
 
-	var buf bytes.Buffer
-	if err := t.Execute(&buf, vars); err != nil {
-		return "", fmt.Errorf("executing branch template: %w", err)
+	name, err := tmpl.RenderString(tmplStr, data)
+	if err != nil {
+		return "", fmt.Errorf("invalid branch template %q: %w", tmplStr, err)
 	}
 
-	name := buf.String()
 	if err := ValidateBranchName(name); err != nil {
 		return "", err
 	}
@@ -58,7 +46,7 @@ func ValidateBranchName(name string) error {
 		return fmt.Errorf("branch name %q contains '..'", name)
 	}
 	for _, c := range name {
-		if c < 32 || c == 127 { // control chars
+		if c < 32 || c == 127 {
 			return fmt.Errorf("branch name %q contains control characters", name)
 		}
 	}
