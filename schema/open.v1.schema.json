@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": [
+        "seshy.open/v1"
+      ],
+      "description": "Document version"
+    },
+    "id": {
+      "type": "string",
+      "description": "Row identifier"
+    },
+    "cwd": {
+      "type": "string",
+      "description": "Absolute session directory"
+    },
+    "command": {
+      "items": {
+        "type": "string"
+      },
+      "type": "array",
+      "description": "Program to run; empty means the caller's default"
+    },
+    "environment": {
+      "additionalProperties": {
+        "type": "string"
+      },
+      "type": "object",
+      "description": "Variables to set; SESHY_SESSION names the session"
+    },
+    "successCodes": {
+      "items": {
+        "type": "integer"
+      },
+      "type": "array",
+      "description": "Exit statuses the caller treats as success"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "version",
+    "id",
+    "cwd",
+    "command",
+    "environment",
+    "successCodes"
+  ],
+  "title": "seshy.open/v1"
+}

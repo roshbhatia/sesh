@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "sessionJSON": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Session name"
+        },
+        "path": {
+          "type": "string",
+          "description": "Absolute session directory"
+        },
+        "repoCount": {
+          "type": "integer",
+          "description": "Repo entries in the session directory"
+        },
+        "lastModified": {
+          "type": "string",
+          "format": "date-time",
+          "description": "Directory modification time (RFC 3339)"
+        },
+        "id": {
+          "type": "string",
+          "description": "Row identifier"
+        },
+        "archived": {
+          "type": "boolean",
+          "description": "True when listed from the archive"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "path",
+        "repoCount",
+        "lastModified",
+        "id",
+        "archived"
+      ]
+    }
+  },
+  "items": {
+    "$ref": "#/$defs/sessionJSON"
+  },
+  "type": "array",
+  "title": "seshy.list/v1"
+}

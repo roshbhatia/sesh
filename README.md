@@ -293,6 +293,39 @@ Unarchiving does not prompt for confirmation, because nothing is destroyed.
 
 <!-- END GENERATED:commands -->
 
+## Plumbing and porcelain
+
+seshy has two kinds of command. Porcelain is for a person at a terminal;
+plumbing is for another program.
+
+Porcelain reads the terminal, prompts, and prints a table. The bare `sy`
+picker and the `s` and `sz` shell wrappers from `sy init` are porcelain: they
+resolve a name, change the directory, or open a picker.
+
+Plumbing prints one stable document and never prompts. It is versioned, so a
+caller pins the shape it parses:
+
+| Command | Output |
+| --- | --- |
+| `sy list --format json` | `seshy.list/v1`, a bare array; schema `schema/list.v1.schema.json` |
+| `sy open <name> --format json` | `seshy.open/v1`; schema `schema/open.v1.schema.json` |
+| `sy status <name> --format json` | `seshy.status/v1`; schema `schema/status.v1.schema.json` |
+| `sy source list` | `roster.catalog/v1`; schema `schema/roster.catalog.v1.schema.json` |
+| `sy provider` | one `provider/v1` result frame; manifest `share/seshy/providers/seshy.yaml` |
+
+## Exit status
+
+Scripts branch on the exit status:
+
+| Status | Meaning |
+| --- | --- |
+| 0 | success |
+| 1 | failure |
+| 2 | usage error |
+| 3 | session, repo, or archive entry not found |
+| 4 | refused: a confirmation seshy could not ask for, or was answered no |
+| 128 | git failed; git's own message follows `fatal:` |
+
 ## Configuration
 
 Config lives at `~/.config/seshy/config.yaml`, or

@@ -274,6 +274,13 @@ func generateRepository(check bool) error {
 		"README.md":                 []byte(updated),
 		"schema/config.schema.json": schema,
 	}
+	schemas, err := outputSchemas()
+	if err != nil {
+		return err
+	}
+	for path, content := range schemas {
+		outputs[path] = content
+	}
 	for _, shell := range []string{"bash", "fish", "nu", "zsh"} {
 		generated, generateErr := generatedCompletion(shell)
 		if generateErr != nil {
