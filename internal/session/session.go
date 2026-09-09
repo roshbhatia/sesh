@@ -34,6 +34,7 @@ type RepoInfo struct {
 	SourcePath string // absolute original repo path
 	Branch     string // rendered branch name (empty for non-git)
 	Reused     bool   // the branch existed before this add and git checked it out
+	Detached   bool   // the worktree is on no branch
 }
 
 // AddResult holds the outcome of adding multiple repos.
@@ -223,6 +224,7 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 				return nil, fmt.Errorf("failed to create worktree for %s: %w", repoPath, err)
 			}
 			createdList = append(createdList, created{worktreePath: wtPath, repoPath: repoPath, branchName: branch})
+			recordBranch(repoPath, branch, name, reused)
 			repoInfos = append(repoInfos, RepoInfo{
 				Name:       filepath.Base(wtPath),
 				Path:       wtPath,
@@ -358,6 +360,7 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 				result.Errors[given] = err
 				continue
 			}
+			recordBranch(repoPath, branch, name, reused)
 			newRepos = append(newRepos, RepoInfo{
 				Name:       filepath.Base(wtPath),
 				Path:       wtPath,
@@ -436,7 +439,7 @@ func GetSessionRepoInfos(sessionPath string) []RepoInfo {
 				continue
 			}
 			branch, _ := git.Branch(entryPath)
-			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: mainRepo, Branch: branch})
+			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: mainRepo, Branch: branch, Detached: branch == "HEAD"})
 		}
 	}
 	return repos
@@ -462,6 +465,7 @@ func RenameSession(oldName, newName string) error {
 	}
 
 	repairWorktreeRegistrations(newPath)
+	retargetBranchRecords(newPath, oldName, newName)
 
 	return nil
 }

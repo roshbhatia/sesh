@@ -76,10 +76,7 @@ var statusCmd = &cobra.Command{
 			if len(r.Name) > nameW {
 				nameW = len(r.Name)
 			}
-			label := r.Branch
-			if label == "" {
-				label = "(symlink)"
-			}
+			label := branchLabel(r)
 			if len(label) > branchW {
 				branchW = len(label)
 			}
@@ -92,16 +89,27 @@ var statusCmd = &cobra.Command{
 			ui.ANSIColor(ui.ColorPurple, "SOURCE"),
 		)
 		for _, r := range repos {
-			branch := r.Branch
-			branchStr := ui.ANSIColor(ui.ColorPurple, branch)
-			if branch == "" {
-				branchStr = ui.Faint("(symlink)")
+			branchStr := ui.ANSIColor(ui.ColorPurple, r.Branch)
+			if r.Branch == "" || r.Detached {
+				branchStr = ui.Faint(branchLabel(r))
 			}
 			fmt.Printf(fmtStr, r.Name, branchStr, ui.Faint(contractHome(r.SourcePath)))
 		}
 
 		return nil
 	},
+}
+
+// branchLabel names what a repo entry is checked out on, or what it is when
+// it has no branch.
+func branchLabel(r session.RepoInfo) string {
+	switch {
+	case r.Branch == "":
+		return "(symlink)"
+	case r.Detached:
+		return "(detached)"
+	}
+	return r.Branch
 }
 
 func contractHome(path string) string {

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/roshbhatia/go-utils/git"
 )
@@ -129,6 +130,109 @@ func realPath(path string) string {
 	return filepath.Clean(path)
 }
 
+// sessionKey is the git config key, under a branch's section, that names the
+// session seshy created the branch for. It is the link back from a branch to
+// its session once the worktree no longer has the branch checked out.
+func sessionKey(branch string) string { return "branch." + branch + ".seshy-session" }
+
+// reusedKey marks a branch that existed before seshy checked it out, so a
+// later status can tell a reused branch from a created one.
+func reusedKey(branch string) string { return "branch." + branch + ".seshy-reused" }
+
+// recordBranch writes the back-pointer from branch to session in the repo's
+// local config. The worktree already exists, so a failed write is not worth
+// failing the add over: delete falls back to HEAD without it.
+func recordBranch(repoPath, branch, session string, reused bool) {
+	_ = git.ConfigSet(repoPath, sessionKey(branch), session)
+	if reused {
+		_ = git.ConfigSet(repoPath, reusedKey(branch), "true")
+	}
+}
+
+// recordedBranches lists the branches of mainRepoPath whose back-pointer names
+// session.
+func recordedBranches(mainRepoPath, session string) []string {
+	out, err := git.Output(mainRepoPath, "config", "--local", "--get-regexp", `^branch\..*\.seshy-session$`)
+	if err != nil {
+		return nil
+	}
+	var branches []string
+	for _, line := range strings.Split(out, "\n") {
+		key, value, ok := strings.Cut(line, " ")
+		if !ok || value != session {
+			continue
+		}
+		branch := strings.TrimSuffix(strings.TrimPrefix(key, "branch."), ".seshy-session")
+		branches = append(branches, branch)
+	}
+	return branches
+}
+
+// retargetBranchRecords rewrites the back-pointers of every worktree under
+// sessionPath from oldName to newName after a rename.
+func retargetBranchRecords(sessionPath, oldName, newName string) {
+	entries, _ := os.ReadDir(sessionPath)
+	for _, e := range entries {
+		if !e.IsDir() || strings.HasPrefix(e.Name(), ".") {
+			continue
+		}
+		mainRepoPath, err := git.MainWorktree(filepath.Join(sessionPath, e.Name()))
+		if err != nil {
+			continue
+		}
+		for _, branch := range recordedBranches(mainRepoPath, oldName) {
+			_ = git.ConfigSet(mainRepoPath, sessionKey(branch), newName)
+		}
+	}
+}
+
+// branchesToDelete decides which branches go with the worktree at entryPath.
+//
+// The checked-out branch is read first: when its back-pointer names this
+// session it is the one seshy created, whatever else the user did since.
+// Otherwise every branch recorded for the session that no other worktree has
+// checked out is seshy's, which is what makes a detached tree still drop its
+// branch. Sessions from before the back-pointer existed have no record at all,
+// and for them HEAD is the only evidence of what seshy created, so it is
+// deleted as it always was.
+func branchesToDelete(mainRepoPath, entryPath, session string) []string {
+	head, _ := git.Branch(entryPath)
+	if head == "HEAD" {
+		head = ""
+	}
+	if head != "" {
+		if owner, set, _ := git.ConfigGet(mainRepoPath, sessionKey(head)); set && owner == session {
+			return []string{head}
+		}
+	}
+
+	recorded := recordedBranches(mainRepoPath, session)
+	if len(recorded) == 0 {
+		// Legacy session: no record was ever written, so the checked-out branch
+		// is the only evidence of what seshy created.
+		if head == "" {
+			return nil
+		}
+		return []string{head}
+	}
+
+	elsewhere := map[string]bool{}
+	if trees, err := git.Worktrees(mainRepoPath); err == nil {
+		for _, tree := range trees {
+			if tree.Branch != "" && realPath(tree.Path) != realPath(entryPath) {
+				elsewhere[strings.TrimPrefix(tree.Branch, "refs/heads/")] = true
+			}
+		}
+	}
+	var branches []string
+	for _, branch := range recorded {
+		if !elsewhere[branch] {
+			branches = append(branches, branch)
+		}
+	}
+	return branches
+}
+
 // errStandaloneClone marks a session entry that is a repository of its own
 // rather than a worktree registered elsewhere. git worktree remove would
 // refuse it, so the caller deletes the directory instead.
@@ -146,24 +250,27 @@ func teardownWorktree(entryPath string, force bool) error {
 		return errStandaloneClone
 	}
 
-	branchName, _ := git.Branch(entryPath)
+	// The session is the directory the entry sits in, for archived and live
+	// sessions alike.
+	branches := branchesToDelete(mainRepoPath, entryPath, filepath.Base(filepath.Dir(entryPath)))
 
 	if err := removeWorktree(mainRepoPath, entryPath, force); err != nil {
 		return fmt.Errorf("failed to remove worktree: %w", err)
 	}
 
-	if branchName == "" || branchName == "HEAD" {
-		return nil
+	mainBranch, _ := git.Branch(mainRepoPath)
+	var errs []error
+	for _, branch := range branches {
+		// The main worktree may sit on the same branch; git refuses to delete a
+		// checked-out branch and the user did not ask us to move it.
+		if branch == mainBranch {
+			continue
+		}
+		if err := git.Run(mainRepoPath, "branch", "-D", branch); err != nil {
+			errs = append(errs, fmt.Errorf("failed to delete branch %s: %w", branch, err))
+		}
 	}
-	// The main worktree may sit on the same branch; git refuses to delete a
-	// checked-out branch and the user did not ask us to move it.
-	if mainBranch, _ := git.Branch(mainRepoPath); mainBranch == branchName {
-		return nil
-	}
-	if err := git.Run(mainRepoPath, "branch", "-D", branchName); err != nil {
-		return fmt.Errorf("failed to delete branch %s: %w", branchName, err)
-	}
-	return nil
+	return errors.Join(errs...)
 }
 
 // CleanupWorktrees removes all git worktrees in a session directory and deletes their branches.

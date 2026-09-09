@@ -1125,3 +1125,161 @@ func TestCreateRefusesMissingRepoPath(t *testing.T) {
 		t.Error("session left behind after a failed create")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// branch back-pointers
+// ---------------------------------------------------------------------------
+
+func branchExists(t *testing.T, repoDir, branch string) bool {
+	t.Helper()
+	return git.Succeeds(repoDir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+}
+
+func TestCreateRecordsSessionBackPointer(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("ptr", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	owner, set, err := git.ConfigGet(repoDir, "branch.sy/ptr/repo.seshy-session")
+	if err != nil || !set || owner != "ptr" {
+		t.Errorf("back-pointer = %q set=%v err=%v, want ptr", owner, set, err)
+	}
+	if _, set, _ := git.ConfigGet(repoDir, "branch.sy/ptr/repo.seshy-reused"); set {
+		t.Error("a freshly created branch must not be marked reused")
+	}
+}
+
+func TestCreateRecordsReusedBranch(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if err := git.Run(repoDir, "branch", "sy/again/repo"); err != nil {
+		t.Fatalf("branch: %v", err)
+	}
+	if _, err := Create("again", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if v, set, _ := git.ConfigGet(repoDir, "branch.sy/again/repo.seshy-reused"); !set || v != "true" {
+		t.Errorf("reused marker = %q set=%v, want true", v, set)
+	}
+}
+
+// TestDeleteDropsBranchOfDetachedWorktree is the case the back-pointer exists
+// for: HEAD no longer names the branch, so only the record can.
+func TestDeleteDropsBranchOfDetachedWorktree(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("det", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sessionPath, _ := Resolve("det")
+	if err := git.Run(filepath.Join(sessionPath, "repo"), "checkout", "--detach"); err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	repos := GetSessionRepoInfos(sessionPath)
+	if len(repos) != 1 || !repos[0].Detached {
+		t.Fatalf("expected one detached repo, got %+v", repos)
+	}
+
+	if err := Delete("det", false); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if branchExists(t, repoDir, "sy/det/repo") {
+		t.Error("branch of the detached worktree survived delete")
+	}
+}
+
+// TestDeleteKeepsBranchTheUserSwitchedTo: the worktree sits on a branch seshy
+// never created, so that one stays and the recorded one goes.
+func TestDeleteKeepsBranchTheUserSwitchedTo(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("sw", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sessionPath, _ := Resolve("sw")
+	if err := git.Run(filepath.Join(sessionPath, "repo"), "checkout", "-b", "mine"); err != nil {
+		t.Fatalf("checkout -b: %v", err)
+	}
+
+	if err := Delete("sw", false); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if !branchExists(t, repoDir, "mine") {
+		t.Error("delete removed a branch seshy did not create")
+	}
+	if branchExists(t, repoDir, "sy/sw/repo") {
+		t.Error("delete left the recorded seshy branch behind")
+	}
+}
+
+// TestDeleteLegacySessionFallsBackToHead covers sessions created before the
+// back-pointer existed: with no record, HEAD is still what gets deleted.
+func TestDeleteLegacySessionFallsBackToHead(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("old", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := git.Run(repoDir, "config", "--unset", "branch.sy/old/repo.seshy-session"); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+
+	if err := Delete("old", false); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if branchExists(t, repoDir, "sy/old/repo") {
+		t.Error("legacy delete left the checked-out branch behind")
+	}
+}
+
+func TestRenameRetargetsBranchRecords(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("before", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := RenameSession("before", "after"); err != nil {
+		t.Fatalf("RenameSession: %v", err)
+	}
+	owner, _, _ := git.ConfigGet(repoDir, "branch.sy/before/repo.seshy-session")
+	if owner != "after" {
+		t.Errorf("back-pointer after rename = %q, want after", owner)
+	}
+
+	sessionPath, _ := Resolve("after")
+	if err := git.Run(filepath.Join(sessionPath, "repo"), "checkout", "--detach"); err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	if err := Delete("after", false); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if branchExists(t, repoDir, "sy/before/repo") {
+		t.Error("renamed session did not drop its detached branch")
+	}
+}
+
+func TestRemoveRepoEntryDetachedDropsBranch(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("rm-det", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sessionPath, _ := Resolve("rm-det")
+	if err := git.Run(filepath.Join(sessionPath, "repo"), "checkout", "--detach"); err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	if err := RemoveRepoEntry(sessionPath, "repo", false); err != nil {
+		t.Fatalf("RemoveRepoEntry: %v", err)
+	}
+	if branchExists(t, repoDir, "sy/rm-det/repo") {
+		t.Error("remove left the detached entry's branch behind")
+	}
+}
