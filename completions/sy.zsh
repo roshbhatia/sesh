@@ -116,6 +116,8 @@ _sy() {
       'new:-b='*) continue ;;
       'open:--format') consume_value=1; continue ;;
       'open:--format='*) continue ;;
+      'status:--format') consume_value=1; continue ;;
+      'status:--format='*) continue ;;
     esac
     case "$context:$word" in
       ':completion') context='completion' ;;
@@ -249,6 +251,7 @@ _sy() {
       ;;
     'status')
       _arguments \
+        '--format[Output format: table, json]:value:' \
         '*:argument:__sy_completion_values_11'
 
       ;;

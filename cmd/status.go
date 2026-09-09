@@ -1,6 +1,7 @@
 package cmd
 
 import (
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -12,6 +13,53 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// statusVersion names the document "sy status --format json" prints.
+const statusVersion = "seshy.status/v1"
+
+// statusFormats are the formats "sy status" renders.
+var statusFormats = []string{formatTable, formatJSON}
+
+var statusFormat string
+
+// statusJSON is the seshy.status/v1 document: one session and every repo
+// entry in it.
+type statusJSON struct {
+	Version string           `json:"version" jsonschema:"enum=seshy.status/v1,description=Document version"`
+	Name    string           `json:"name" jsonschema:"description=Session name"`
+	Path    string           `json:"path" jsonschema:"description=Absolute session directory"`
+	Repos   []statusRepoJSON `json:"repos" jsonschema:"description=Repo entries in directory order"`
+}
+
+// statusRepoJSON is one repo entry of a session.
+type statusRepoJSON struct {
+	Name         string `json:"name" jsonschema:"description=Entry basename in the session directory"`
+	Path         string `json:"path" jsonschema:"description=Absolute entry path"`
+	Source       string `json:"source" jsonschema:"description=Absolute path of the source repo or linked directory"`
+	Branch       string `json:"branch" jsonschema:"description=Checked-out branch; empty for a symlink; HEAD when detached"`
+	Kind         string `json:"kind" jsonschema:"enum=worktree,enum=symlink,enum=clone,description=What the entry is"`
+	Locked       bool   `json:"locked" jsonschema:"description=The worktree is locked in its source repo"`
+	Detached     bool   `json:"detached" jsonschema:"description=The worktree is on no branch"`
+	BranchReused bool   `json:"branchReused" jsonschema:"description=The branch existed before seshy checked it out"`
+}
+
+// statusDocument builds the seshy.status/v1 document for a session.
+func statusDocument(name, path string, repos []session.RepoInfo) statusJSON {
+	out := statusJSON{Version: statusVersion, Name: name, Path: path, Repos: make([]statusRepoJSON, len(repos))}
+	for i, r := range repos {
+		out.Repos[i] = statusRepoJSON{
+			Name:         r.Name,
+			Path:         r.Path,
+			Source:       r.SourcePath,
+			Branch:       r.Branch,
+			Kind:         r.Kind,
+			Locked:       r.Locked,
+			Detached:     r.Detached,
+			BranchReused: r.Reused,
+		}
+	}
+	return out
+}
+
 var statusCmd = &cobra.Command{
 	Use:               "status [name]",
 	Short:             "Show session details",
@@ -19,6 +67,11 @@ var statusCmd = &cobra.Command{
 	Args:              cobra.MaximumNArgs(1),
 	ValidArgsFunction: completeSessionNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
+		format, err := resolveFormat(statusFormat, nil, statusFormats...)
+		if err != nil {
+			return err
+		}
+
 		var name string
 
 		if len(args) > 0 {
@@ -59,6 +112,12 @@ var statusCmd = &cobra.Command{
 		}
 
 		repos := session.GetSessionRepoInfos(sessionPath)
+
+		if format == formatJSON {
+			enc := json.NewEncoder(os.Stdout)
+			enc.SetIndent("", "  ")
+			return enc.Encode(statusDocument(name, sessionPath, repos))
+		}
 
 		summary := [][]string{
 			{ui.StdoutFaint("session"), ui.StdoutColor(ui.ColorPurple, name)},
@@ -111,5 +170,6 @@ func contractHome(path string) string {
 }
 
 func init() {
+	statusCmd.Flags().StringVar(&statusFormat, "format", "", formatUsage(statusFormats...))
 	rootCmd.AddCommand(statusCmd)
 }

@@ -119,6 +119,11 @@ function __sy_completion_context
         continue
       case 'open:--format=*'
         continue
+      case 'status:--format'
+        set consume_value 1
+        continue
+      case 'status:--format=*'
+        continue
     end
     switch "$context:$word"
       case ':completion'
@@ -181,7 +186,7 @@ complete -c sy -f -n 'test (__sy_completion_context) = ""' -a open -d 'sy open <
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a path -d 'sy path <name>'
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a remove -d 'sy remove <session> <repo> [flags]'
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a rename -d 'sy rename <old-name> <new-name>'
-complete -c sy -f -n 'test (__sy_completion_context) = ""' -a status -d 'sy status [name]'
+complete -c sy -f -n 'test (__sy_completion_context) = ""' -a status -d 'sy status [name] [flags]'
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a switch -d 'sy switch <name> [flags]'
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a unarchive -d 'sy unarchive [name]'
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a '(__sy_completion_values_0)'
@@ -214,6 +219,7 @@ complete -c sy -f -n 'test (__sy_completion_context) = "path"' -a '(__sy_complet
 complete -c sy -n 'test (__sy_completion_context) = "remove"' -l force -s f -d 'Skip confirmation prompt'
 complete -c sy -f -n 'test (__sy_completion_context) = "remove"' -a '(__sy_completion_values_9)'
 complete -c sy -f -n 'test (__sy_completion_context) = "rename"' -a '(__sy_completion_values_10)'
+complete -c sy -n 'test (__sy_completion_context) = "status"' -l format -r -d 'Output format: table, json'
 complete -c sy -f -n 'test (__sy_completion_context) = "status"' -a '(__sy_completion_values_11)'
 complete -c sy -n 'test (__sy_completion_context) = "switch"' -l name -d 'Print the resolved name instead of the path'
 complete -c sy -f -n 'test (__sy_completion_context) = "switch"' -a '(__sy_completion_values_12)'

@@ -80,6 +80,7 @@ func runCmd(args ...string) (stdout, stderr string, err error) {
 	listNames = false
 	listPaths = false
 	openFormat = ""
+	statusFormat = ""
 	newBranch = ""
 	newStdin = false
 	newEmpty = false
@@ -760,6 +761,7 @@ func TestListJSON(t *testing.T) {
 	listNames = false
 	listPaths = false
 	openFormat = ""
+	statusFormat = ""
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
@@ -783,6 +785,7 @@ func TestListNames(t *testing.T) {
 	listNames = false
 	listPaths = false
 	openFormat = ""
+	statusFormat = ""
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
@@ -803,6 +806,7 @@ func TestListPaths(t *testing.T) {
 	listNames = false
 	listPaths = false
 	openFormat = ""
+	statusFormat = ""
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
@@ -823,6 +827,7 @@ func TestListEmpty(t *testing.T) {
 	listNames = false
 	listPaths = false
 	openFormat = ""
+	statusFormat = ""
 	stdout, _, err := runCmd("list", "--json")
 	if err != nil {
 		t.Fatalf("list --json empty: %v", err)

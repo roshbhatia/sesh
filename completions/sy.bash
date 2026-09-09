@@ -101,6 +101,8 @@ _sy_complete() {
       'new:-b='*) continue ;;
       'open:--format') consume_value=1; continue ;;
       'open:--format='*) continue ;;
+      'status:--format') consume_value=1; continue ;;
+      'status:--format='*) continue ;;
     esac
     case "$context:$word" in
       ':completion') context='completion' ;;
@@ -225,6 +227,7 @@ _sy_complete() {
       ;;
     'status')
       __sy_completion_filter "$current" < <(
+        printf '%s\n' '--format'
         __sy_completion_values_11
       )
       ;;

@@ -207,7 +207,11 @@ sy rename <old-name> <new-name>
 
 ### `sy status`
 
-sy status [name]
+sy status [name] [flags]
+
+| Option | Description |
+| --- | --- |
+| `--format` `<value>` | Output format: table, json |
 
 ### `sy switch`
 

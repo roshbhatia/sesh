@@ -27,14 +27,23 @@ type Session struct {
 	LastModified time.Time
 }
 
+// Repo entry kinds: what a session directory entry is.
+const (
+	KindWorktree = "worktree" // a linked worktree of the source repo
+	KindSymlink  = "symlink"  // a symlink to a non-git directory
+	KindClone    = "clone"    // a repository of its own, registered nowhere else
+)
+
 // RepoInfo describes a repo that was created in a session.
 type RepoInfo struct {
 	Name       string // basename in session dir
 	Path       string // absolute worktree/symlink path
 	SourcePath string // absolute original repo path
 	Branch     string // rendered branch name (empty for non-git)
+	Kind       string // KindWorktree, KindSymlink, or KindClone
 	Reused     bool   // the branch existed before this add and git checked it out
 	Detached   bool   // the worktree is on no branch
+	Locked     bool   // the worktree is locked in its source repo
 }
 
 // AddResult holds the outcome of adding multiple repos.
@@ -230,6 +239,7 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 				Path:       wtPath,
 				SourcePath: repoPath,
 				Branch:     branch,
+				Kind:       KindWorktree,
 				Reused:     reused,
 			})
 		} else {
@@ -242,6 +252,7 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 				Name:       filepath.Base(linkPath),
 				Path:       linkPath,
 				SourcePath: repoPath,
+				Kind:       KindSymlink,
 			})
 		}
 	}
@@ -366,6 +377,7 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 				Path:       wtPath,
 				SourcePath: repoPath,
 				Branch:     branch,
+				Kind:       KindWorktree,
 				Reused:     reused,
 			})
 		} else {
@@ -378,6 +390,7 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 				Name:       filepath.Base(linkPath),
 				Path:       linkPath,
 				SourcePath: repoPath,
+				Kind:       KindSymlink,
 			})
 		}
 
@@ -432,17 +445,42 @@ func GetSessionRepoInfos(sessionPath string) []RepoInfo {
 			if resolved == "" {
 				resolved = target
 			}
-			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: resolved})
+			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: resolved, Kind: KindSymlink})
 		} else if info.IsDir() {
 			mainRepo, err := git.MainWorktree(entryPath)
 			if err != nil {
 				continue
 			}
 			branch, _ := git.Branch(entryPath)
-			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: mainRepo, Branch: branch, Detached: branch == "HEAD"})
+			repo := RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: mainRepo, Branch: branch, Kind: KindWorktree, Detached: branch == "HEAD"}
+			if filepath.Clean(mainRepo) == filepath.Clean(entryPath) {
+				repo.Kind = KindClone
+			}
+			if repo.Kind == KindWorktree {
+				repo.Locked = worktreeLocked(mainRepo, entryPath)
+				if !repo.Detached && branch != "" {
+					_, repo.Reused, _ = git.ConfigGet(mainRepo, reusedKey(branch))
+				}
+			}
+			repos = append(repos, repo)
 		}
 	}
 	return repos
+}
+
+// worktreeLocked reports whether mainRepoPath lists worktreePath as locked.
+func worktreeLocked(mainRepoPath, worktreePath string) bool {
+	trees, err := git.Worktrees(mainRepoPath)
+	if err != nil {
+		return false
+	}
+	target := realPath(worktreePath)
+	for _, tree := range trees {
+		if realPath(tree.Path) == target {
+			return tree.Locked
+		}
+	}
+	return false
 }
 
 // RenameSession renames a session directory and repairs git worktree registrations.

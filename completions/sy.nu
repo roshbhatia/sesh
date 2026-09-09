@@ -102,6 +102,7 @@ export extern "sy rename" [
 ]
 
 export extern "sy status" [
+  --format: string # Output format: table, json
   ...args: string@"__sy_completion_values_11"
 ]
 
