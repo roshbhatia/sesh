@@ -13,7 +13,7 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "4.2.0"
+const version = "4.3.0"
 
 var (
 	greedyQuery string
