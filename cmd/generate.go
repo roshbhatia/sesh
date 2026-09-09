@@ -138,7 +138,7 @@ func completionValues(kind, context string) ([]string, error) {
 		if len(args) == 0 {
 			return completionValues("active", context)
 		}
-		found, err := session.GetPath(args[0])
+		found, err := session.Resolve(args[0])
 		if err != nil {
 			return nil, nil
 		}

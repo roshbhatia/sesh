@@ -92,7 +92,7 @@ func TestArchivePreservesUncommittedWork(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	sessionPath, _ := GetPath("dirty")
+	sessionPath, _ := Resolve("dirty")
 	scratch := filepath.Join(sessionPath, "repo", "wip.txt")
 	if err := os.WriteFile(scratch, []byte("in progress\n"), 0644); err != nil {
 		t.Fatalf("write: %v", err)

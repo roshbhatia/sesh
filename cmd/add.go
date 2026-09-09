@@ -27,11 +27,7 @@ var addCmd = &cobra.Command{
 	ValidArgsFunction: completeSessionNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if !session.Exists(name) {
-			return fmt.Errorf("session %s not found", ui.AccentBold(name))
-		}
-
-		sessionPath, err := session.GetPath(name)
+		sessionPath, err := session.Resolve(name)
 		if err != nil {
 			return err
 		}

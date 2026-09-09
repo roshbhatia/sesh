@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/roshbhatia/seshy/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -35,7 +36,7 @@ Exits non-zero when the working directory is outside every session.`,
 			if currentQuiet {
 				cmd.SilenceErrors = true
 			}
-			return fmt.Errorf("not inside a session")
+			return fmt.Errorf("not inside a session: %w", exitcode.ErrNotFound)
 		}
 		if currentPath {
 			fmt.Println(found.Path)

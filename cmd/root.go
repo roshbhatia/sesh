@@ -6,6 +6,7 @@ import (
 
 	"github.com/roshbhatia/go-utils/ui"
 	"github.com/roshbhatia/seshy/internal/config"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/roshbhatia/seshy/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -39,7 +40,7 @@ var rootCmd = &cobra.Command{
 		if greedyQuery != "" {
 			match := greedyMatch(greedyQuery, sessions)
 			if match == nil {
-				return fmt.Errorf("no session matches %q", greedyQuery)
+				return fmt.Errorf("no session matches '%s': %w", greedyQuery, exitcode.ErrNotFound)
 			}
 			fmt.Println(match.Path)
 			return nil

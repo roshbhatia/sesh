@@ -6,7 +6,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/roshbhatia/go-utils/ui"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/roshbhatia/seshy/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -26,7 +26,7 @@ func resolveSession(query string) (session.Session, error) {
 	}
 	match := greedyMatch(query, sessions)
 	if match == nil {
-		return session.Session{}, fmt.Errorf("no session matches %s", ui.AccentBold(query))
+		return session.Session{}, fmt.Errorf("no session matches '%s': %w", query, exitcode.ErrNotFound)
 	}
 	return *match, nil
 }

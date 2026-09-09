@@ -12,6 +12,7 @@ import (
 
 	"github.com/roshbhatia/go-utils/git"
 	"github.com/roshbhatia/seshy/internal/config"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/roshbhatia/seshy/internal/tmpl"
 )
 
@@ -70,6 +71,11 @@ func ValidateSessionName(name string) error {
 	if name == "" {
 		return fmt.Errorf("session name cannot be empty")
 	}
+	// A leading dash reads as an option to every shell wrapper and to git; a
+	// leading dot hides the directory from a plain ls.
+	if name[0] == '-' || name[0] == '.' {
+		return fmt.Errorf("session name cannot start with '-' or '.'")
+	}
 	for _, c := range name {
 		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') &&
 			(c < '0' || c > '9') && c != '-' && c != '_' {
@@ -79,20 +85,31 @@ func ValidateSessionName(name string) error {
 	return nil
 }
 
-// GetPath returns the absolute path to a session.
-func GetPath(name string) (string, error) {
-	root := config.GetSessionsRoot()
-	sessionPath := filepath.Join(root, name)
-	if _, err := os.Stat(sessionPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("session '%s' not found", name)
+// Resolve returns the absolute path of the session called name, or an error
+// wrapping exitcode.ErrNotFound.
+func Resolve(name string) (string, error) {
+	return resolveIn(config.GetSessionsRoot(), "session", name)
+}
+
+// resolveIn matches name against the directory entries of root byte for
+// byte. os.Stat would accept "Feat" for a session called "feat" on a
+// case-insensitive filesystem, and then act on a name the user never typed.
+func resolveIn(root, kind, name string) (string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("read %s: %w", root, err)
 	}
-	return sessionPath, nil
+	for _, entry := range entries {
+		if entry.Name() == name && entry.IsDir() {
+			return filepath.Join(root, name), nil
+		}
+	}
+	return "", fmt.Errorf("%s '%s' %w", kind, name, exitcode.ErrNotFound)
 }
 
 // Exists checks if a session exists.
 func Exists(name string) bool {
-	root := config.GetSessionsRoot()
-	_, err := os.Stat(filepath.Join(root, name))
+	_, err := Resolve(name)
 	return err == nil
 }
 
@@ -274,7 +291,7 @@ func resolveRepoPath(path string) string {
 // AddRepos adds repositories to an existing session (best-effort).
 // Returns AddResult, RepoInfo for newly added repos, and error.
 func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []RepoInfo, error) {
-	sessionPath, err := GetPath(name)
+	sessionPath, err := Resolve(name)
 	if err != nil {
 		return AddResult{}, nil, err
 	}
@@ -404,16 +421,14 @@ func RenameSession(oldName, newName string) error {
 	if err := ValidateSessionName(newName); err != nil {
 		return err
 	}
-	if !Exists(oldName) {
-		return fmt.Errorf("session '%s' not found", oldName)
+	oldPath, err := Resolve(oldName)
+	if err != nil {
+		return err
 	}
 	if Exists(newName) {
 		return fmt.Errorf("session '%s' already exists", newName)
 	}
-
-	root := config.GetSessionsRoot()
-	oldPath := filepath.Join(root, oldName)
-	newPath := filepath.Join(root, newName)
+	newPath := filepath.Join(config.GetSessionsRoot(), newName)
 
 	if err := os.Rename(oldPath, newPath); err != nil {
 		return fmt.Errorf("failed to rename session: %w", err)
@@ -457,7 +472,7 @@ var ErrCleanupIncomplete = errors.New("worktree cleanup incomplete")
 // in ErrCleanupIncomplete, so the caller can tell a partial success from a
 // refusal to act.
 func Delete(name string, force bool) error {
-	sessionPath, err := GetPath(name)
+	sessionPath, err := Resolve(name)
 	if err != nil {
 		return err
 	}

@@ -30,7 +30,7 @@ var removeCmd = &cobra.Command{
 			}
 			return names, cobra.ShellCompDirectiveNoFileComp
 		case 1:
-			sessionPath, err := session.GetPath(args[0])
+			sessionPath, err := session.Resolve(args[0])
 			if err != nil {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
@@ -46,11 +46,7 @@ var removeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, repoName := args[0], args[1]
 
-		if !session.Exists(name) {
-			return fmt.Errorf("session %s not found", ui.AccentBold(name))
-		}
-
-		sessionPath, err := session.GetPath(name)
+		sessionPath, err := session.Resolve(name)
 		if err != nil {
 			return err
 		}

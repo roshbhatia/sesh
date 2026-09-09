@@ -53,11 +53,7 @@ var statusCmd = &cobra.Command{
 			name = selected[0]
 		}
 
-		if !session.Exists(name) {
-			return fmt.Errorf("session %s not found", ui.AccentBold(name))
-		}
-
-		sessionPath, err := session.GetPath(name)
+		sessionPath, err := session.Resolve(name)
 		if err != nil {
 			return err
 		}

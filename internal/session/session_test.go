@@ -1,6 +1,7 @@
 package session
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -8,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/roshbhatia/go-utils/git"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 )
 
 // ---------------------------------------------------------------------------
@@ -72,7 +74,9 @@ func TestValidateSessionName(t *testing.T) {
 		{"slash", "test/session", true},
 		{"at sign", "test@session", true},
 		{"dot", "test.session", true},
-		{"leading hyphen", "-bad", false}, // hyphens allowed anywhere
+		{"leading hyphen", "-bad", true}, // reads as an option everywhere
+		{"leading dot", ".bad", true},
+		{"inner hyphen", "a-b", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -444,10 +448,10 @@ func TestListRepoSources(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Exists / GetPath
+// Exists / Resolve
 // ---------------------------------------------------------------------------
 
-func TestExistsAndGetPath(t *testing.T) {
+func TestExistsAndResolve(t *testing.T) {
 	isolatedRoot(t)
 	tmp := t.TempDir()
 
@@ -462,9 +466,9 @@ func TestExistsAndGetPath(t *testing.T) {
 		t.Error("expected Exists to return true")
 	}
 
-	path, err := GetPath("exist-test")
+	path, err := Resolve("exist-test")
 	if err != nil {
-		t.Fatalf("GetPath: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	if path == "" {
 		t.Error("expected non-empty path")
@@ -478,11 +482,40 @@ func TestExistsFalse(t *testing.T) {
 	}
 }
 
-func TestGetPathNotFound(t *testing.T) {
+func TestResolveNotFound(t *testing.T) {
 	isolatedRoot(t)
-	_, err := GetPath("no-such-session")
-	if err == nil {
-		t.Error("expected error for nonexistent session")
+	_, err := Resolve("no-such-session")
+	if !errors.Is(err, exitcode.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for nonexistent session, got %v", err)
+	}
+}
+
+// TestResolveMatchesBytesExactly is the macOS case: the default filesystem
+// there is case-insensitive, so os.Stat("Feat") finds "feat" and a verb acts
+// on a session the user never named. Resolve compares directory entries
+// instead. On a case-sensitive filesystem the collision never happens and the
+// test only checks the not-found path.
+func TestResolveMatchesBytesExactly(t *testing.T) {
+	root := filepath.Join(isolatedRoot(t), "seshy", "sessions")
+	if err := os.MkdirAll(filepath.Join(root, "feat"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "Feat")); err == nil {
+		t.Log("filesystem is case-insensitive; os.Stat accepts Feat for feat")
+	}
+
+	if _, err := Resolve("feat"); err != nil {
+		t.Fatalf("Resolve(feat): %v", err)
+	}
+	_, err := Resolve("Feat")
+	if !errors.Is(err, exitcode.ErrNotFound) {
+		t.Errorf("Resolve(Feat) = %v, want ErrNotFound", err)
+	}
+	if Exists("Feat") {
+		t.Error("Exists(Feat) reported true for a session called feat")
+	}
+	if _, err := ResolveArchived("Feat"); !errors.Is(err, exitcode.ErrNotFound) {
+		t.Errorf("ResolveArchived(Feat) = %v, want ErrNotFound", err)
 	}
 }
 
@@ -501,7 +534,7 @@ func TestCreateWithGitRepo(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	sessionPath, _ := GetPath("create-git")
+	sessionPath, _ := Resolve("create-git")
 	worktree := filepath.Join(sessionPath, "myrepo")
 	if _, err := os.Stat(worktree); os.IsNotExist(err) {
 		t.Error("expected worktree to be created")
@@ -519,7 +552,7 @@ func TestCreateWithNonGitDir(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	sessionPath, _ := GetPath("create-plain")
+	sessionPath, _ := Resolve("create-plain")
 	link := filepath.Join(sessionPath, "plain")
 	info, err := os.Lstat(link)
 	if err != nil {
@@ -565,7 +598,7 @@ func TestCreateMultipleRepos(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	sessionPath, _ := GetPath("multi")
+	sessionPath, _ := Resolve("multi")
 	for _, name := range []string{"repo1", "repo2"} {
 		if _, err := os.Stat(filepath.Join(sessionPath, name)); os.IsNotExist(err) {
 			t.Errorf("expected %s worktree to exist", name)
@@ -667,7 +700,7 @@ func TestAddRepos(t *testing.T) {
 		t.Fatalf("AddRepos: %v", err)
 	}
 
-	sessionPath, _ := GetPath("add-test")
+	sessionPath, _ := Resolve("add-test")
 	for _, wt := range []string{"repo1", "repo2"} {
 		if _, err := os.Stat(filepath.Join(sessionPath, wt)); os.IsNotExist(err) {
 			t.Errorf("expected %s to exist after AddRepos", wt)
@@ -698,7 +731,7 @@ func TestAddReposNonGitDir(t *testing.T) {
 		t.Fatalf("AddRepos with plain dir: %v", err)
 	}
 
-	sessionPath, _ := GetPath("add-plain")
+	sessionPath, _ := Resolve("add-plain")
 	link := filepath.Join(sessionPath, "plain")
 	info, err := os.Lstat(link)
 	if err != nil {
@@ -866,7 +899,7 @@ func TestDeleteCleansUpWorktrees(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	sessionPath, _ := GetPath("wt-del")
+	sessionPath, _ := Resolve("wt-del")
 	worktreePath := filepath.Join(sessionPath, "r-wt-del")
 
 	if err := Delete("wt-del", false); err != nil {
@@ -904,7 +937,7 @@ func TestListRepoCountExcludesDSStore(t *testing.T) {
 	}
 
 	// Add a .DS_Store file to the session directory
-	sessionPath, _ := GetPath("dsstore-test")
+	sessionPath, _ := Resolve("dsstore-test")
 	os.WriteFile(filepath.Join(sessionPath, ".DS_Store"), []byte("x"), 0644)
 
 	sessions, _ := List()

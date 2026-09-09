@@ -89,7 +89,7 @@ var newCmd = &cobra.Command{
 
 		warnReusedBranches(repoInfos)
 
-		sessionPath, _ := session.GetPath(name)
+		sessionPath, _ := session.Resolve(name)
 		data := session.BuildTemplateData(name, sessionPath, repoInfos)
 
 		// Render per-repo templates

@@ -344,7 +344,7 @@ func TestDeleteForceRemovesLockedWorktree(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	sessionPath, _ := session.GetPath("stuck")
+	sessionPath, _ := session.Resolve("stuck")
 	worktree := filepath.Join(sessionPath, "r")
 	if out, err := exec.Command("git", "-C", repo, "worktree", "lock", worktree).CombinedOutput(); err != nil {
 		t.Fatalf("worktree lock: %v\n%s", err, out)
@@ -385,7 +385,7 @@ func TestDeleteWithoutForceRefusesLockedWorktree(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	sessionPath, _ := session.GetPath("held")
+	sessionPath, _ := session.Resolve("held")
 	if out, err := exec.Command("git", "-C", repo, "worktree", "lock", filepath.Join(sessionPath, "r")).CombinedOutput(); err != nil {
 		t.Fatalf("worktree lock: %v\n%s", err, out)
 	}
@@ -558,7 +558,7 @@ func TestNewCommandEmptyFlag(t *testing.T) {
 	if _, _, err := runCmd("new", "solo", "--empty"); err != nil {
 		t.Fatalf("new --empty: %v", err)
 	}
-	path, err := session.GetPath("solo")
+	path, err := session.Resolve("solo")
 	if err != nil {
 		t.Fatalf("session not created: %v", err)
 	}
@@ -596,7 +596,7 @@ func TestNewCommandStdinNoLinesCreatesEmptySession(t *testing.T) {
 	if _, _, err := runCmd("new", "piped", "--stdin"); err != nil {
 		t.Fatalf("new --stdin: %v", err)
 	}
-	path, err := session.GetPath("piped")
+	path, err := session.Resolve("piped")
 	if err != nil {
 		t.Fatalf("session not created: %v", err)
 	}
