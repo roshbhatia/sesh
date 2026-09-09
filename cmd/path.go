@@ -3,7 +3,6 @@ package cmd
 import (
 	"fmt"
 
-	"github.com/roshbhatia/go-utils/ui"
 	"github.com/roshbhatia/seshy/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -14,11 +13,7 @@ var pathCmd = &cobra.Command{
 	Args:              cobra.ExactArgs(1),
 	ValidArgsFunction: completeSessionNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		name := args[0]
-		if !session.Exists(name) {
-			return fmt.Errorf("session %s not found", ui.AccentBold(name))
-		}
-		path, err := session.GetPath(name)
+		path, err := session.Resolve(args[0])
 		if err != nil {
 			return err
 		}

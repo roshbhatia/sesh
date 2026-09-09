@@ -12,17 +12,14 @@ import (
 
 // ArchivedExists checks if an archived session exists.
 func ArchivedExists(name string) bool {
-	_, err := os.Stat(filepath.Join(config.GetArchiveRoot(), name))
+	_, err := ResolveArchived(name)
 	return err == nil
 }
 
-// GetArchivedPath returns the absolute path to an archived session.
-func GetArchivedPath(name string) (string, error) {
-	archivePath := filepath.Join(config.GetArchiveRoot(), name)
-	if _, err := os.Stat(archivePath); os.IsNotExist(err) {
-		return "", fmt.Errorf("archived session '%s' not found", name)
-	}
-	return archivePath, nil
+// ResolveArchived returns the absolute path of the archived session called
+// name, or an error wrapping exitcode.ErrNotFound.
+func ResolveArchived(name string) (string, error) {
+	return resolveIn(config.GetArchiveRoot(), "archived session", name)
 }
 
 // ListArchived returns all archived sessions.
@@ -34,7 +31,7 @@ func ListArchived() ([]Session, error) {
 // Worktrees, branches, and uncommitted work are all preserved: this is a move,
 // not a teardown. Returns the new path.
 func Archive(name string) (string, error) {
-	sessionPath, err := GetPath(name)
+	sessionPath, err := Resolve(name)
 	if err != nil {
 		return "", err
 	}
@@ -56,7 +53,7 @@ func Archive(name string) (string, error) {
 // Unarchive moves an archived session back into the sessions root.
 // Returns the restored path.
 func Unarchive(name string) (string, error) {
-	archivePath, err := GetArchivedPath(name)
+	archivePath, err := ResolveArchived(name)
 	if err != nil {
 		return "", err
 	}
@@ -77,7 +74,7 @@ func Unarchive(name string) (string, error) {
 
 // DeleteArchived removes an archived session and cleans up worktrees + branches.
 func DeleteArchived(name string, force bool) error {
-	archivePath, err := GetArchivedPath(name)
+	archivePath, err := ResolveArchived(name)
 	if err != nil {
 		return err
 	}

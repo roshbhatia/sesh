@@ -9,6 +9,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/roshbhatia/go-utils/git"
 	"github.com/roshbhatia/go-utils/ui"
 	"github.com/roshbhatia/seshy/internal/config"
 	"github.com/roshbhatia/seshy/internal/tmpl"
@@ -49,8 +50,12 @@ func Run(event string, commands []string, data tmpl.TemplateData, sessionPath st
 	return errs
 }
 
+// buildEnv is the caller's environment minus the GIT_* variables that would
+// retarget every git command a hook runs, plus the SESHY_* facts about the
+// session. A hook that runs inside a worktree must see that worktree, not the
+// GIT_DIR of whichever repository invoked sy.
 func buildEnv(event string, data tmpl.TemplateData) []string {
-	env := os.Environ()
+	env := git.CleanEnv()
 
 	repoNames := make([]string, len(data.Repos))
 	for i, r := range data.Repos {

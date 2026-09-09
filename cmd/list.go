@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/roshbhatia/go-utils/ui"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/roshbhatia/seshy/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -34,7 +35,7 @@ var listCmd = &cobra.Command{
 			flagCount++
 		}
 		if flagCount > 1 {
-			return fmt.Errorf("--json, --names, and --paths are mutually exclusive")
+			return exitcode.Usagef("--json, --names, and --paths are mutually exclusive")
 		}
 
 		list, empty := session.List, noSessionsMessage()

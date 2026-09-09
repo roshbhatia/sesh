@@ -10,7 +10,9 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/roshbhatia/go-utils/git"
 	"github.com/roshbhatia/seshy/internal/config"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/roshbhatia/seshy/internal/tmpl"
 )
 
@@ -31,6 +33,8 @@ type RepoInfo struct {
 	Path       string // absolute worktree/symlink path
 	SourcePath string // absolute original repo path
 	Branch     string // rendered branch name (empty for non-git)
+	Reused     bool   // the branch existed before this add and git checked it out
+	Detached   bool   // the worktree is on no branch
 }
 
 // AddResult holds the outcome of adding multiple repos.
@@ -68,6 +72,11 @@ func ValidateSessionName(name string) error {
 	if name == "" {
 		return fmt.Errorf("session name cannot be empty")
 	}
+	// A leading dash reads as an option to every shell wrapper and to git; a
+	// leading dot hides the directory from a plain ls.
+	if name[0] == '-' || name[0] == '.' {
+		return fmt.Errorf("session name cannot start with '-' or '.'")
+	}
 	for _, c := range name {
 		if (c < 'a' || c > 'z') && (c < 'A' || c > 'Z') &&
 			(c < '0' || c > '9') && c != '-' && c != '_' {
@@ -77,27 +86,63 @@ func ValidateSessionName(name string) error {
 	return nil
 }
 
-// GetPath returns the absolute path to a session.
-func GetPath(name string) (string, error) {
-	root := config.GetSessionsRoot()
-	sessionPath := filepath.Join(root, name)
-	if _, err := os.Stat(sessionPath); os.IsNotExist(err) {
-		return "", fmt.Errorf("session '%s' not found", name)
+// Resolve returns the absolute path of the session called name, or an error
+// wrapping exitcode.ErrNotFound.
+func Resolve(name string) (string, error) {
+	return resolveIn(config.GetSessionsRoot(), "session", name)
+}
+
+// resolveIn matches name against the directory entries of root byte for
+// byte. os.Stat would accept "Feat" for a session called "feat" on a
+// case-insensitive filesystem, and then act on a name the user never typed.
+func resolveIn(root, kind, name string) (string, error) {
+	entries, err := os.ReadDir(root)
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("read %s: %w", root, err)
 	}
-	return sessionPath, nil
+	for _, entry := range entries {
+		if entry.Name() == name && entry.IsDir() {
+			return filepath.Join(root, name), nil
+		}
+	}
+	return "", exitcode.NotFoundf("%s '%s' not found", kind, name)
 }
 
 // Exists checks if a session exists.
 func Exists(name string) bool {
-	root := config.GetSessionsRoot()
-	_, err := os.Stat(filepath.Join(root, name))
+	_, err := Resolve(name)
 	return err == nil
+}
+
+// NormalizeRepoPath turns a repo argument into the path seshy records: the
+// toplevel of its git repository, so a subdirectory names its repo, or the
+// absolute path of a plain directory. A missing path is an error here rather
+// than a dangling symlink in the session.
+func NormalizeRepoPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(abs)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", exitcode.NotFoundf("no such directory: %s", path)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("not a directory: %s", path)
+	}
+	if root, err := git.Root(abs); err == nil {
+		return root, nil
+	}
+	return abs, nil
 }
 
 // branchForRepo computes the branch name for a repo.
 func branchForRepo(branchFormat, branchOverride, sessionName, repoPath string) (string, error) {
 	if branchOverride != "" {
-		if err := ValidateBranchName(branchOverride); err != nil {
+		if err := CheckBranchName(branchOverride); err != nil {
 			return "", err
 		}
 		return branchOverride, nil
@@ -134,7 +179,7 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 	}
 
 	if opts.GitEnabled {
-		if _, err := gitExec(sessionPath, "init"); err != nil {
+		if err := git.Run(sessionPath, "init"); err != nil {
 			_ = os.RemoveAll(sessionPath)
 			return nil, fmt.Errorf("failed to init session git repo: %w", err)
 		}
@@ -151,38 +196,41 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 	cleanup := func() {
 		for i := len(createdList) - 1; i >= 0; i-- {
 			c := createdList[i]
-			if IsGitRepo(c.repoPath) && c.branchName != "" {
+			if git.IsRepo(c.repoPath) && c.branchName != "" {
 				_ = removeWorktree(c.repoPath, c.worktreePath, true)
-				_, _ = gitExec(c.repoPath, "branch", "-D", c.branchName)
+				_ = git.Run(c.repoPath, "branch", "-D", c.branchName)
 			}
 		}
 		_ = os.RemoveAll(sessionPath)
 	}
 
 	for _, repoPath := range repoPaths {
-		// Resolve to absolute path so symlinks are never self-referential.
-		if abs, err := filepath.Abs(repoPath); err == nil {
-			repoPath = abs
+		repoPath, err := NormalizeRepoPath(repoPath)
+		if err != nil {
+			cleanup()
+			return nil, err
 		}
 
-		if IsGitRepo(repoPath) {
+		if git.IsRepo(repoPath) {
 			branch, err := branchForRepo(opts.BranchFormat, opts.BranchOverride, name, repoPath)
 			if err != nil {
 				cleanup()
-				return nil, fmt.Errorf("branch name for %s: %w", repoPath, err)
+				return nil, err
 			}
 
-			wtPath, err := CreateWorktree(repoPath, sessionPath, branch)
+			wtPath, reused, err := CreateWorktree(repoPath, sessionPath, branch)
 			if err != nil {
 				cleanup()
 				return nil, fmt.Errorf("failed to create worktree for %s: %w", repoPath, err)
 			}
 			createdList = append(createdList, created{worktreePath: wtPath, repoPath: repoPath, branchName: branch})
+			recordBranch(repoPath, branch, name, reused)
 			repoInfos = append(repoInfos, RepoInfo{
 				Name:       filepath.Base(wtPath),
 				Path:       wtPath,
 				SourcePath: repoPath,
 				Branch:     branch,
+				Reused:     reused,
 			})
 		} else {
 			linkPath, err := CreateSymlink(repoPath, sessionPath)
@@ -271,7 +319,7 @@ func resolveRepoPath(path string) string {
 // AddRepos adds repositories to an existing session (best-effort).
 // Returns AddResult, RepoInfo for newly added repos, and error.
 func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []RepoInfo, error) {
-	sessionPath, err := GetPath(name)
+	sessionPath, err := Resolve(name)
 	if err != nil {
 		return AddResult{}, nil, err
 	}
@@ -288,39 +336,42 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 		existingSet[resolveRepoPath(s)] = true
 	}
 
-	for _, repoPath := range repoPaths {
-		// Resolve to absolute path so symlinks are never self-referential.
-		if abs, err := filepath.Abs(repoPath); err == nil {
-			repoPath = abs
+	for _, given := range repoPaths {
+		repoPath, err := NormalizeRepoPath(given)
+		if err != nil {
+			result.Errors[given] = err
+			continue
 		}
 
 		resolved := resolveRepoPath(repoPath)
 		if existingSet[resolved] {
-			result.Skipped = append(result.Skipped, repoPath)
+			result.Skipped = append(result.Skipped, given)
 			continue
 		}
 
-		if IsGitRepo(repoPath) {
+		if git.IsRepo(repoPath) {
 			branch, err := branchForRepo(opts.BranchFormat, opts.BranchOverride, name, repoPath)
 			if err != nil {
-				result.Errors[repoPath] = err
+				result.Errors[given] = err
 				continue
 			}
-			wtPath, err := CreateWorktree(repoPath, sessionPath, branch)
+			wtPath, reused, err := CreateWorktree(repoPath, sessionPath, branch)
 			if err != nil {
-				result.Errors[repoPath] = err
+				result.Errors[given] = err
 				continue
 			}
+			recordBranch(repoPath, branch, name, reused)
 			newRepos = append(newRepos, RepoInfo{
 				Name:       filepath.Base(wtPath),
 				Path:       wtPath,
 				SourcePath: repoPath,
 				Branch:     branch,
+				Reused:     reused,
 			})
 		} else {
 			linkPath, err := CreateSymlink(repoPath, sessionPath)
 			if err != nil {
-				result.Errors[repoPath] = err
+				result.Errors[given] = err
 				continue
 			}
 			newRepos = append(newRepos, RepoInfo{
@@ -330,7 +381,7 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 			})
 		}
 
-		result.Added = append(result.Added, repoPath)
+		result.Added = append(result.Added, given)
 		existingSet[resolved] = true
 	}
 
@@ -383,12 +434,12 @@ func GetSessionRepoInfos(sessionPath string) []RepoInfo {
 			}
 			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: resolved})
 		} else if info.IsDir() {
-			mainRepo, err := GetWorktreeMainRepo(entryPath)
+			mainRepo, err := git.MainWorktree(entryPath)
 			if err != nil {
 				continue
 			}
-			branch, _ := GetCurrentBranch(entryPath)
-			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: mainRepo, Branch: branch})
+			branch, _ := git.Branch(entryPath)
+			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: mainRepo, Branch: branch, Detached: branch == "HEAD"})
 		}
 	}
 	return repos
@@ -400,22 +451,21 @@ func RenameSession(oldName, newName string) error {
 	if err := ValidateSessionName(newName); err != nil {
 		return err
 	}
-	if !Exists(oldName) {
-		return fmt.Errorf("session '%s' not found", oldName)
+	oldPath, err := Resolve(oldName)
+	if err != nil {
+		return err
 	}
 	if Exists(newName) {
 		return fmt.Errorf("session '%s' already exists", newName)
 	}
-
-	root := config.GetSessionsRoot()
-	oldPath := filepath.Join(root, oldName)
-	newPath := filepath.Join(root, newName)
+	newPath := filepath.Join(config.GetSessionsRoot(), newName)
 
 	if err := os.Rename(oldPath, newPath); err != nil {
 		return fmt.Errorf("failed to rename session: %w", err)
 	}
 
 	repairWorktreeRegistrations(newPath)
+	retargetBranchRecords(newPath, oldName, newName)
 
 	return nil
 }
@@ -431,15 +481,14 @@ func repairWorktreeRegistrations(sessionPath string) {
 			continue
 		}
 		entryPath := filepath.Join(sessionPath, e.Name())
-		mainRepo, err := GetWorktreeMainRepo(entryPath)
+		mainRepo, err := git.MainWorktree(entryPath)
 		if err != nil {
 			continue
 		}
 		mainToWorktrees[mainRepo] = append(mainToWorktrees[mainRepo], entryPath)
 	}
 	for mainRepo, worktrees := range mainToWorktrees {
-		args := append([]string{"worktree", "repair"}, worktrees...)
-		_, _ = gitExec(mainRepo, args...)
+		_ = git.WorktreeRepair(mainRepo, worktrees...)
 	}
 }
 
@@ -454,7 +503,7 @@ var ErrCleanupIncomplete = errors.New("worktree cleanup incomplete")
 // in ErrCleanupIncomplete, so the caller can tell a partial success from a
 // refusal to act.
 func Delete(name string, force bool) error {
-	sessionPath, err := GetPath(name)
+	sessionPath, err := Resolve(name)
 	if err != nil {
 		return err
 	}

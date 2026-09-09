@@ -114,18 +114,18 @@ make_git_repo() {
 test_version() {
   local tmp="$1"
   out=$(sy --version)
-  assert_contains "$out" "4.1.0"
+  assert_contains "$out" "4.2.0"
 }
 
 test_list_empty() {
   local tmp="$1"
-  out=$(sy list)
+  out=$(sy list 2>&1 >/dev/null)
   assert_contains "$out" "No sessions"
 }
 
 test_list_alias_ls() {
   local tmp="$1"
-  out=$(sy ls)
+  out=$(sy ls 2>&1 >/dev/null)
   assert_contains "$out" "No sessions"
 }
 

@@ -53,20 +53,21 @@ var statusCmd = &cobra.Command{
 			name = selected[0]
 		}
 
-		if !session.Exists(name) {
-			return fmt.Errorf("session %s not found", ui.AccentBold(name))
-		}
-
-		sessionPath, err := session.GetPath(name)
+		sessionPath, err := session.Resolve(name)
 		if err != nil {
 			return err
 		}
 
 		repos := session.GetSessionRepoInfos(sessionPath)
 
-		fmt.Printf("%-10s %s\n", ui.Faint("session"), ui.AccentBold(name))
-		fmt.Printf("%-10s %s\n", ui.Faint("path"), contractHome(sessionPath))
-		fmt.Printf("%-10s %d\n", ui.Faint("repos"), len(repos))
+		summary := [][]string{
+			{ui.StdoutFaint("session"), ui.StdoutColor(ui.ColorPurple, name)},
+			{ui.StdoutFaint("path"), contractHome(sessionPath)},
+			{ui.StdoutFaint("repos"), fmt.Sprintf("%d", len(repos))},
+		}
+		if err := table(os.Stdout, nil, summary); err != nil {
+			return err
+		}
 
 		if len(repos) == 0 {
 			return nil
@@ -74,38 +75,28 @@ var statusCmd = &cobra.Command{
 
 		fmt.Println()
 
-		nameW := len("NAME")
-		branchW := len("BRANCH")
-		for _, r := range repos {
-			if len(r.Name) > nameW {
-				nameW = len(r.Name)
+		rows := make([][]string, len(repos))
+		for i, r := range repos {
+			branch := ui.StdoutColor(ui.ColorPurple, r.Branch)
+			if r.Branch == "" || r.Detached {
+				branch = ui.StdoutFaint(branchLabel(r))
 			}
-			label := r.Branch
-			if label == "" {
-				label = "(symlink)"
-			}
-			if len(label) > branchW {
-				branchW = len(label)
-			}
+			rows[i] = []string{"  " + r.Name, branch, ui.StdoutFaint(contractHome(r.SourcePath))}
 		}
-
-		fmtStr := fmt.Sprintf("  %%-%ds  %%-%ds  %%s\n", nameW, branchW)
-		fmt.Printf(fmtStr,
-			ui.ANSIColor(ui.ColorPurple, "NAME"),
-			ui.ANSIColor(ui.ColorPurple, "BRANCH"),
-			ui.ANSIColor(ui.ColorPurple, "SOURCE"),
-		)
-		for _, r := range repos {
-			branch := r.Branch
-			branchStr := ui.ANSIColor(ui.ColorPurple, branch)
-			if branch == "" {
-				branchStr = ui.Faint("(symlink)")
-			}
-			fmt.Printf(fmtStr, r.Name, branchStr, ui.Faint(contractHome(r.SourcePath)))
-		}
-
-		return nil
+		return table(os.Stdout, []string{"  NAME", "BRANCH", "SOURCE"}, rows)
 	},
+}
+
+// branchLabel names what a repo entry is checked out on, or what it is when
+// it has no branch.
+func branchLabel(r session.RepoInfo) string {
+	switch {
+	case r.Branch == "":
+		return "(symlink)"
+	case r.Detached:
+		return "(detached)"
+	}
+	return r.Branch
 }
 
 func contractHome(path string) string {

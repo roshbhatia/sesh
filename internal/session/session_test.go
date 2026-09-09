@@ -1,11 +1,15 @@
 package session
 
 import (
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/roshbhatia/go-utils/git"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 )
 
 // ---------------------------------------------------------------------------
@@ -70,7 +74,9 @@ func TestValidateSessionName(t *testing.T) {
 		{"slash", "test/session", true},
 		{"at sign", "test@session", true},
 		{"dot", "test.session", true},
-		{"leading hyphen", "-bad", false}, // hyphens allowed anywhere
+		{"leading hyphen", "-bad", true}, // reads as an option everywhere
+		{"leading dot", ".bad", true},
+		{"inner hyphen", "a-b", false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -102,69 +108,6 @@ func TestGetRepoBasename(t *testing.T) {
 				t.Errorf("GetRepoBasename(%q) = %q, want %q", tc.path, got, tc.want)
 			}
 		})
-	}
-}
-
-// ---------------------------------------------------------------------------
-// IsGitRepo
-// ---------------------------------------------------------------------------
-
-func TestIsGitRepo(t *testing.T) {
-	tmp := t.TempDir()
-
-	t.Run("git repo", func(t *testing.T) {
-		dir := filepath.Join(tmp, "repo")
-		setupTestGitRepo(t, dir)
-		if !IsGitRepo(dir) {
-			t.Error("expected true for git repo")
-		}
-	})
-
-	t.Run("plain dir", func(t *testing.T) {
-		dir := filepath.Join(tmp, "plain")
-		os.MkdirAll(dir, 0755)
-		if IsGitRepo(dir) {
-			t.Error("expected false for plain dir")
-		}
-	})
-
-	t.Run("nonexistent path", func(t *testing.T) {
-		if IsGitRepo(filepath.Join(tmp, "does-not-exist")) {
-			t.Error("expected false for nonexistent path")
-		}
-	})
-}
-
-// ---------------------------------------------------------------------------
-// gitExec
-// ---------------------------------------------------------------------------
-
-func TestGitExecErrorIncludesStderr(t *testing.T) {
-	tmp := t.TempDir()
-	// Run a git command that will fail with an informative error
-	_, err := gitExec(tmp, "rev-parse", "--git-dir")
-	if err == nil {
-		t.Fatal("expected error for non-git directory")
-	}
-	errStr := err.Error()
-	if !strings.Contains(errStr, "git rev-parse failed in") {
-		t.Errorf("expected error to contain 'git rev-parse failed in', got: %s", errStr)
-	}
-	// Should contain some git stderr content (e.g., "fatal: not a git repository")
-	if !strings.Contains(strings.ToLower(errStr), "fatal") && !strings.Contains(strings.ToLower(errStr), "not a git") {
-		t.Logf("warning: error may not contain git stderr content: %s", errStr)
-	}
-}
-
-func TestGitExecSuccess(t *testing.T) {
-	tmp := t.TempDir()
-	setupTestGitRepo(t, tmp)
-	out, err := gitExec(tmp, "rev-parse", "--git-dir")
-	if err != nil {
-		t.Fatalf("gitExec: %v", err)
-	}
-	if out == "" {
-		t.Error("expected non-empty output from rev-parse --git-dir")
 	}
 }
 
@@ -252,7 +195,7 @@ func TestCreateWorktree(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sessions", "my-session")
 	os.MkdirAll(sessionDir, 0755)
 
-	worktreePath, err := CreateWorktree(repoDir, sessionDir, "sy/my-session/testrepo")
+	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "sy/my-session/testrepo")
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -260,7 +203,7 @@ func TestCreateWorktree(t *testing.T) {
 	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
 		t.Error("worktree directory was not created")
 	}
-	if !IsGitRepo(worktreePath) {
+	if !git.IsRepo(worktreePath) {
 		t.Error("worktree is not a git repo")
 	}
 	if filepath.Base(worktreePath) != "testrepo" {
@@ -275,7 +218,7 @@ func TestCreateWorktreeNonGitRepo(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sess")
 	os.MkdirAll(sessionDir, 0755)
 
-	_, err := CreateWorktree(plain, sessionDir, "sy/sess/plain")
+	_, _, err := CreateWorktree(plain, sessionDir, "sy/sess/plain")
 	if err == nil {
 		t.Error("expected error when source is not a git repo")
 	}
@@ -291,13 +234,13 @@ func TestCreateWorktreeOnSessionBranch(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sessions", "feat")
 	os.MkdirAll(sessionDir, 0755)
 
-	worktreePath, err := CreateWorktree(repoDir, sessionDir, "sy/feat/testrepo")
+	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "sy/feat/testrepo")
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
 
 	// Verify the worktree is on a sy/ prefixed branch, not detached HEAD
-	branch, err := gitExec(worktreePath, "rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := git.Output(worktreePath, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		t.Fatalf("rev-parse --abbrev-ref HEAD: %v", err)
 	}
@@ -317,7 +260,7 @@ func TestCreateWorktreeDoesNotClobberMain(t *testing.T) {
 	setupTestGitRepo(t, repoDir)
 
 	// Get original main branch ref
-	originalRef, err := gitExec(repoDir, "rev-parse", "HEAD")
+	originalRef, err := git.Output(repoDir, "rev-parse", "HEAD")
 	if err != nil {
 		t.Fatalf("rev-parse HEAD: %v", err)
 	}
@@ -325,13 +268,13 @@ func TestCreateWorktreeDoesNotClobberMain(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sessions", "test")
 	os.MkdirAll(sessionDir, 0755)
 
-	_, err = CreateWorktree(repoDir, sessionDir, "test")
+	_, _, err = CreateWorktree(repoDir, sessionDir, "test")
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
 
 	// Verify main ref hasn't changed
-	afterRef, err := gitExec(repoDir, "rev-parse", "HEAD")
+	afterRef, err := git.Output(repoDir, "rev-parse", "HEAD")
 	if err != nil {
 		t.Fatalf("rev-parse HEAD after: %v", err)
 	}
@@ -353,20 +296,20 @@ func TestCreateWorktreeSucceedsWhenBranchCheckedOutElsewhere(t *testing.T) {
 	os.MkdirAll(sessionDir2, 0755)
 
 	// Create first worktree — its branch is checked out
-	wt1, err := CreateWorktree(repoDir, sessionDir1, "sess1")
+	wt1, _, err := CreateWorktree(repoDir, sessionDir1, "sess1")
 	if err != nil {
 		t.Fatalf("first CreateWorktree: %v", err)
 	}
-	if !IsGitRepo(wt1) {
+	if !git.IsRepo(wt1) {
 		t.Fatal("first worktree is not a git repo")
 	}
 
 	// Create second worktree — should succeed despite first having source branch checked out
-	wt2, err := CreateWorktree(repoDir, sessionDir2, "sess2")
+	wt2, _, err := CreateWorktree(repoDir, sessionDir2, "sess2")
 	if err != nil {
 		t.Fatalf("second CreateWorktree: %v (source branch already checked out in %s)", err, wt1)
 	}
-	if !IsGitRepo(wt2) {
+	if !git.IsRepo(wt2) {
 		t.Fatal("second worktree is not a git repo")
 	}
 }
@@ -432,7 +375,7 @@ func TestCleanupWorktrees(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "session")
 	os.MkdirAll(sessionDir, 0755)
 
-	worktreePath, err := CreateWorktree(repoDir, sessionDir, "test")
+	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "test")
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -469,43 +412,6 @@ func TestCleanupWorktreesNonexistentDir(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// GetWorktreeMainRepo
-// ---------------------------------------------------------------------------
-
-func TestGetWorktreeMainRepo(t *testing.T) {
-	isolatedRoot(t)
-	tmp := t.TempDir()
-
-	repoDir := filepath.Join(tmp, "testrepo")
-	setupTestGitRepo(t, repoDir)
-
-	sessionDir := filepath.Join(tmp, "session")
-	os.MkdirAll(sessionDir, 0755)
-
-	worktreePath, err := CreateWorktree(repoDir, sessionDir, "test")
-	if err != nil {
-		t.Fatalf("CreateWorktree: %v", err)
-	}
-
-	mainRepo, err := GetWorktreeMainRepo(worktreePath)
-	if err != nil {
-		t.Fatalf("GetWorktreeMainRepo: %v", err)
-	}
-	// The resolved main repo should point somewhere inside or equal to repoDir
-	if mainRepo == "" {
-		t.Error("expected non-empty main repo path")
-	}
-}
-
-func TestGetWorktreeMainRepoNonGit(t *testing.T) {
-	tmp := t.TempDir()
-	_, err := GetWorktreeMainRepo(tmp)
-	if err == nil {
-		t.Error("expected error for non-git directory")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // ListRepoSources
 // ---------------------------------------------------------------------------
 
@@ -522,7 +428,7 @@ func TestListRepoSources(t *testing.T) {
 	os.MkdirAll(sessionDir, 0755)
 
 	// Create a worktree and a symlink
-	_, err := CreateWorktree(repoDir, sessionDir, "test")
+	_, _, err := CreateWorktree(repoDir, sessionDir, "test")
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -542,10 +448,10 @@ func TestListRepoSources(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Exists / GetPath
+// Exists / Resolve
 // ---------------------------------------------------------------------------
 
-func TestExistsAndGetPath(t *testing.T) {
+func TestExistsAndResolve(t *testing.T) {
 	isolatedRoot(t)
 	tmp := t.TempDir()
 
@@ -560,9 +466,9 @@ func TestExistsAndGetPath(t *testing.T) {
 		t.Error("expected Exists to return true")
 	}
 
-	path, err := GetPath("exist-test")
+	path, err := Resolve("exist-test")
 	if err != nil {
-		t.Fatalf("GetPath: %v", err)
+		t.Fatalf("Resolve: %v", err)
 	}
 	if path == "" {
 		t.Error("expected non-empty path")
@@ -576,11 +482,40 @@ func TestExistsFalse(t *testing.T) {
 	}
 }
 
-func TestGetPathNotFound(t *testing.T) {
+func TestResolveNotFound(t *testing.T) {
 	isolatedRoot(t)
-	_, err := GetPath("no-such-session")
-	if err == nil {
-		t.Error("expected error for nonexistent session")
+	_, err := Resolve("no-such-session")
+	if !errors.Is(err, exitcode.ErrNotFound) {
+		t.Errorf("expected ErrNotFound for nonexistent session, got %v", err)
+	}
+}
+
+// TestResolveMatchesBytesExactly is the macOS case: the default filesystem
+// there is case-insensitive, so os.Stat("Feat") finds "feat" and a verb acts
+// on a session the user never named. Resolve compares directory entries
+// instead. On a case-sensitive filesystem the collision never happens and the
+// test only checks the not-found path.
+func TestResolveMatchesBytesExactly(t *testing.T) {
+	root := filepath.Join(isolatedRoot(t), "seshy", "sessions")
+	if err := os.MkdirAll(filepath.Join(root, "feat"), 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "Feat")); err == nil {
+		t.Log("filesystem is case-insensitive; os.Stat accepts Feat for feat")
+	}
+
+	if _, err := Resolve("feat"); err != nil {
+		t.Fatalf("Resolve(feat): %v", err)
+	}
+	_, err := Resolve("Feat")
+	if !errors.Is(err, exitcode.ErrNotFound) {
+		t.Errorf("Resolve(Feat) = %v, want ErrNotFound", err)
+	}
+	if Exists("Feat") {
+		t.Error("Exists(Feat) reported true for a session called feat")
+	}
+	if _, err := ResolveArchived("Feat"); !errors.Is(err, exitcode.ErrNotFound) {
+		t.Errorf("ResolveArchived(Feat) = %v, want ErrNotFound", err)
 	}
 }
 
@@ -599,7 +534,7 @@ func TestCreateWithGitRepo(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	sessionPath, _ := GetPath("create-git")
+	sessionPath, _ := Resolve("create-git")
 	worktree := filepath.Join(sessionPath, "myrepo")
 	if _, err := os.Stat(worktree); os.IsNotExist(err) {
 		t.Error("expected worktree to be created")
@@ -617,7 +552,7 @@ func TestCreateWithNonGitDir(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	sessionPath, _ := GetPath("create-plain")
+	sessionPath, _ := Resolve("create-plain")
 	link := filepath.Join(sessionPath, "plain")
 	info, err := os.Lstat(link)
 	if err != nil {
@@ -663,7 +598,7 @@ func TestCreateMultipleRepos(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	sessionPath, _ := GetPath("multi")
+	sessionPath, _ := Resolve("multi")
 	for _, name := range []string{"repo1", "repo2"} {
 		if _, err := os.Stat(filepath.Join(sessionPath, name)); os.IsNotExist(err) {
 			t.Errorf("expected %s worktree to exist", name)
@@ -765,7 +700,7 @@ func TestAddRepos(t *testing.T) {
 		t.Fatalf("AddRepos: %v", err)
 	}
 
-	sessionPath, _ := GetPath("add-test")
+	sessionPath, _ := Resolve("add-test")
 	for _, wt := range []string{"repo1", "repo2"} {
 		if _, err := os.Stat(filepath.Join(sessionPath, wt)); os.IsNotExist(err) {
 			t.Errorf("expected %s to exist after AddRepos", wt)
@@ -796,7 +731,7 @@ func TestAddReposNonGitDir(t *testing.T) {
 		t.Fatalf("AddRepos with plain dir: %v", err)
 	}
 
-	sessionPath, _ := GetPath("add-plain")
+	sessionPath, _ := Resolve("add-plain")
 	link := filepath.Join(sessionPath, "plain")
 	info, err := os.Lstat(link)
 	if err != nil {
@@ -964,7 +899,7 @@ func TestDeleteCleansUpWorktrees(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	sessionPath, _ := GetPath("wt-del")
+	sessionPath, _ := Resolve("wt-del")
 	worktreePath := filepath.Join(sessionPath, "r-wt-del")
 
 	if err := Delete("wt-del", false); err != nil {
@@ -1002,7 +937,7 @@ func TestListRepoCountExcludesDSStore(t *testing.T) {
 	}
 
 	// Add a .DS_Store file to the session directory
-	sessionPath, _ := GetPath("dsstore-test")
+	sessionPath, _ := Resolve("dsstore-test")
 	os.WriteFile(filepath.Join(sessionPath, ".DS_Store"), []byte("x"), 0644)
 
 	sessions, _ := List()
@@ -1052,7 +987,7 @@ func TestDeleteCleansBranches(t *testing.T) {
 	}
 
 	// Verify branch exists before delete
-	branches, _ := gitExec(repoDir, "branch", "--list", "sy/branch-cleanup/*")
+	branches, _ := git.Output(repoDir, "branch", "--list", "sy/branch-cleanup/*")
 	if branches == "" {
 		t.Fatal("expected sy/branch-cleanup/* branch to exist before delete")
 	}
@@ -1062,7 +997,7 @@ func TestDeleteCleansBranches(t *testing.T) {
 	}
 
 	// Verify branch is cleaned up
-	branches, _ = gitExec(repoDir, "branch", "--list", "sy/branch-cleanup/*")
+	branches, _ = git.Output(repoDir, "branch", "--list", "sy/branch-cleanup/*")
 	if strings.TrimSpace(branches) != "" {
 		t.Errorf("expected branch to be deleted after session delete, still found: %q", branches)
 	}
@@ -1095,8 +1030,256 @@ func TestCreateRollsBackOnFailure(t *testing.T) {
 	}
 
 	// Branch from the good repo should also be cleaned up
-	branches, _ := gitExec(goodRepo, "branch", "--list", "sy/rollback-test/*")
+	branches, _ := git.Output(goodRepo, "branch", "--list", "sy/rollback-test/*")
 	if strings.TrimSpace(branches) != "" {
 		t.Errorf("expected branch to be rolled back, still found: %q", branches)
+	}
+}
+
+// TestCreateWorktreeReusesExistingBranch pins git's DWIM: a branch that already
+// exists is checked out rather than recreated, and the caller learns about it.
+func TestCreateWorktreeReusesExistingBranch(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "testrepo")
+	setupTestGitRepo(t, repoDir)
+	if err := git.Run(repoDir, "branch", "sy/reuse/testrepo"); err != nil {
+		t.Fatalf("branch: %v", err)
+	}
+
+	sessionDir := filepath.Join(tmp, "sessions", "reuse")
+	os.MkdirAll(sessionDir, 0755)
+
+	worktreePath, reused, err := CreateWorktree(repoDir, sessionDir, "sy/reuse/testrepo")
+	if err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+	if !reused {
+		t.Error("expected reused to be true for a pre-existing branch")
+	}
+	branch, _ := git.Branch(worktreePath)
+	if branch != "sy/reuse/testrepo" {
+		t.Errorf("branch = %q, want sy/reuse/testrepo", branch)
+	}
+
+	_, reused, err = CreateWorktree(repoDir, filepath.Join(tmp, "sessions", "fresh"), "sy/fresh/testrepo")
+	if err != nil {
+		t.Fatalf("CreateWorktree fresh: %v", err)
+	}
+	if reused {
+		t.Error("expected reused to be false for a new branch")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// NormalizeRepoPath
+// ---------------------------------------------------------------------------
+
+func TestNormalizeRepoPathSubdirectoryNamesToplevel(t *testing.T) {
+	tmp := t.TempDir()
+	repoDir := filepath.Join(tmp, "repo")
+	setupTestGitRepo(t, repoDir)
+	sub := filepath.Join(repoDir, "pkg", "deep")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	got, err := NormalizeRepoPath(sub)
+	if err != nil {
+		t.Fatalf("NormalizeRepoPath: %v", err)
+	}
+	want, _ := git.Root(repoDir)
+	if got != want {
+		t.Errorf("got %q, want toplevel %q", got, want)
+	}
+}
+
+func TestNormalizeRepoPathMissingIsAnError(t *testing.T) {
+	_, err := NormalizeRepoPath(filepath.Join(t.TempDir(), "absent"))
+	if err == nil || !strings.HasPrefix(err.Error(), "no such directory: ") {
+		t.Errorf("expected 'no such directory' error, got %v", err)
+	}
+}
+
+func TestNormalizeRepoPathPlainDirectoryIsAbsolute(t *testing.T) {
+	tmp := t.TempDir()
+	plain := filepath.Join(tmp, "plain")
+	os.MkdirAll(plain, 0755)
+	got, err := NormalizeRepoPath(plain)
+	if err != nil {
+		t.Fatalf("NormalizeRepoPath: %v", err)
+	}
+	if !filepath.IsAbs(got) {
+		t.Errorf("expected an absolute path, got %q", got)
+	}
+}
+
+func TestCreateRefusesMissingRepoPath(t *testing.T) {
+	isolatedRoot(t)
+	_, err := Create("ghost", []string{filepath.Join(t.TempDir(), "absent")}, defaultOpts())
+	if err == nil {
+		t.Fatal("expected Create to fail for a missing repo path")
+	}
+	if Exists("ghost") {
+		t.Error("session left behind after a failed create")
+	}
+}
+
+// ---------------------------------------------------------------------------
+// branch back-pointers
+// ---------------------------------------------------------------------------
+
+func branchExists(t *testing.T, repoDir, branch string) bool {
+	t.Helper()
+	return git.Succeeds(repoDir, "rev-parse", "--verify", "--quiet", "refs/heads/"+branch)
+}
+
+func TestCreateRecordsSessionBackPointer(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("ptr", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	owner, set, err := git.ConfigGet(repoDir, "branch.sy/ptr/repo.seshy-session")
+	if err != nil || !set || owner != "ptr" {
+		t.Errorf("back-pointer = %q set=%v err=%v, want ptr", owner, set, err)
+	}
+	if _, set, _ := git.ConfigGet(repoDir, "branch.sy/ptr/repo.seshy-reused"); set {
+		t.Error("a freshly created branch must not be marked reused")
+	}
+}
+
+func TestCreateRecordsReusedBranch(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if err := git.Run(repoDir, "branch", "sy/again/repo"); err != nil {
+		t.Fatalf("branch: %v", err)
+	}
+	if _, err := Create("again", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if v, set, _ := git.ConfigGet(repoDir, "branch.sy/again/repo.seshy-reused"); !set || v != "true" {
+		t.Errorf("reused marker = %q set=%v, want true", v, set)
+	}
+}
+
+// TestDeleteDropsBranchOfDetachedWorktree is the case the back-pointer exists
+// for: HEAD no longer names the branch, so only the record can.
+func TestDeleteDropsBranchOfDetachedWorktree(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("det", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sessionPath, _ := Resolve("det")
+	if err := git.Run(filepath.Join(sessionPath, "repo"), "checkout", "--detach"); err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	repos := GetSessionRepoInfos(sessionPath)
+	if len(repos) != 1 || !repos[0].Detached {
+		t.Fatalf("expected one detached repo, got %+v", repos)
+	}
+
+	if err := Delete("det", false); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if branchExists(t, repoDir, "sy/det/repo") {
+		t.Error("branch of the detached worktree survived delete")
+	}
+}
+
+// TestDeleteKeepsBranchTheUserSwitchedTo: the worktree sits on a branch seshy
+// never created, so that one stays and the recorded one goes.
+func TestDeleteKeepsBranchTheUserSwitchedTo(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("sw", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sessionPath, _ := Resolve("sw")
+	if err := git.Run(filepath.Join(sessionPath, "repo"), "checkout", "-b", "mine"); err != nil {
+		t.Fatalf("checkout -b: %v", err)
+	}
+
+	if err := Delete("sw", false); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if !branchExists(t, repoDir, "mine") {
+		t.Error("delete removed a branch seshy did not create")
+	}
+	if branchExists(t, repoDir, "sy/sw/repo") {
+		t.Error("delete left the recorded seshy branch behind")
+	}
+}
+
+// TestDeleteLegacySessionFallsBackToHead covers sessions created before the
+// back-pointer existed: with no record, HEAD is still what gets deleted.
+func TestDeleteLegacySessionFallsBackToHead(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("old", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := git.Run(repoDir, "config", "--unset", "branch.sy/old/repo.seshy-session"); err != nil {
+		t.Fatalf("unset: %v", err)
+	}
+
+	if err := Delete("old", false); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if branchExists(t, repoDir, "sy/old/repo") {
+		t.Error("legacy delete left the checked-out branch behind")
+	}
+}
+
+func TestRenameRetargetsBranchRecords(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("before", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	if err := RenameSession("before", "after"); err != nil {
+		t.Fatalf("RenameSession: %v", err)
+	}
+	owner, _, _ := git.ConfigGet(repoDir, "branch.sy/before/repo.seshy-session")
+	if owner != "after" {
+		t.Errorf("back-pointer after rename = %q, want after", owner)
+	}
+
+	sessionPath, _ := Resolve("after")
+	if err := git.Run(filepath.Join(sessionPath, "repo"), "checkout", "--detach"); err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	if err := Delete("after", false); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+	if branchExists(t, repoDir, "sy/before/repo") {
+		t.Error("renamed session did not drop its detached branch")
+	}
+}
+
+func TestRemoveRepoEntryDetachedDropsBranch(t *testing.T) {
+	isolatedRoot(t)
+	repoDir := filepath.Join(t.TempDir(), "repo")
+	setupTestGitRepo(t, repoDir)
+	if _, err := Create("rm-det", []string{repoDir}, defaultOpts()); err != nil {
+		t.Fatalf("Create: %v", err)
+	}
+	sessionPath, _ := Resolve("rm-det")
+	if err := git.Run(filepath.Join(sessionPath, "repo"), "checkout", "--detach"); err != nil {
+		t.Fatalf("detach: %v", err)
+	}
+	if err := RemoveRepoEntry(sessionPath, "repo", false); err != nil {
+		t.Fatalf("RemoveRepoEntry: %v", err)
+	}
+	if branchExists(t, repoDir, "sy/rm-det/repo") {
+		t.Error("remove left the detached entry's branch behind")
 	}
 }

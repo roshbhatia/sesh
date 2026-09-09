@@ -1,11 +1,9 @@
 package cmd
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/roshbhatia/go-utils/ui"
 	"github.com/roshbhatia/seshy/internal/config"
@@ -36,9 +34,9 @@ var deleteCmd = &cobra.Command{
 			return fmt.Errorf("loading config: %w", err)
 		}
 
-		list, exists := session.List, session.Exists
+		list, resolve := session.List, session.Resolve
 		if deleteArchived {
-			list, exists = session.ListArchived, session.ArchivedExists
+			list, resolve = session.ListArchived, session.ResolveArchived
 		}
 
 		sessions, err := list()
@@ -58,19 +56,14 @@ var deleteCmd = &cobra.Command{
 			return nil
 		}
 
-		if !exists(name) {
-			return fmt.Errorf("session %s not found", ui.AccentBold(name))
+		sessionPath, err := resolve(name)
+		if err != nil {
+			return err
 		}
 
-		if !forceDelete {
-			fmt.Fprintf(os.Stderr, "Delete session %s and its worktrees/branches? [y/N] ", ui.AccentBold(name))
-			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			answer = strings.TrimSpace(strings.ToLower(answer))
-			if answer != "y" && answer != "yes" {
-				fmt.Fprintln(os.Stderr, ui.Info("Cancelled."))
-				return nil
-			}
+		ok, err := confirm(fmt.Sprintf("Delete session %s and its worktrees/branches?", ui.AccentBold(name)), forceDelete)
+		if err != nil || !ok {
+			return err
 		}
 
 		if deleteArchived {
@@ -79,7 +72,6 @@ var deleteCmd = &cobra.Command{
 			}
 		} else {
 			// Run pre-delete hooks with full repo info
-			sessionPath, _ := session.GetPath(name)
 			repoInfos := session.GetSessionRepoInfos(sessionPath)
 			data := session.BuildTemplateData(name, sessionPath, repoInfos)
 			hook.Run("pre-delete", cfg.Hooks.PreDelete, data, sessionPath)

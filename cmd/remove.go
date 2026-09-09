@@ -1,11 +1,9 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/roshbhatia/go-utils/ui"
 	"github.com/roshbhatia/seshy/internal/config"
@@ -30,7 +28,7 @@ var removeCmd = &cobra.Command{
 			}
 			return names, cobra.ShellCompDirectiveNoFileComp
 		case 1:
-			sessionPath, err := session.GetPath(args[0])
+			sessionPath, err := session.Resolve(args[0])
 			if err != nil {
 				return nil, cobra.ShellCompDirectiveNoFileComp
 			}
@@ -46,24 +44,14 @@ var removeCmd = &cobra.Command{
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name, repoName := args[0], args[1]
 
-		if !session.Exists(name) {
-			return fmt.Errorf("session %s not found", ui.AccentBold(name))
-		}
-
-		sessionPath, err := session.GetPath(name)
+		sessionPath, err := session.Resolve(name)
 		if err != nil {
 			return err
 		}
 
-		if !forceRemove {
-			fmt.Fprintf(os.Stderr, "Remove repo %s from session %s? [y/N] ", ui.AccentBold(repoName), ui.AccentBold(name))
-			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			answer = strings.TrimSpace(strings.ToLower(answer))
-			if answer != "y" && answer != "yes" {
-				fmt.Fprintln(os.Stderr, ui.Info("Cancelled."))
-				return nil
-			}
+		ok, err := confirm(fmt.Sprintf("Remove repo %s from session %s?", ui.AccentBold(repoName), ui.AccentBold(name)), forceRemove)
+		if err != nil || !ok {
+			return err
 		}
 
 		if err := session.RemoveRepoEntry(sessionPath, repoName, forceRemove); err != nil {

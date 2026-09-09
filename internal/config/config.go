@@ -4,7 +4,6 @@ package config
 import (
 	"os"
 	"path/filepath"
-	"strings"
 
 	sharedconfig "github.com/roshbhatia/go-utils/config"
 	"github.com/roshbhatia/go-utils/paths"
@@ -61,20 +60,13 @@ func configOptions() sharedconfig.Options {
 
 // Load reads config from disk and merges with defaults.
 func Load() (*Config, error) {
-	options := configOptions()
-	if data, err := os.ReadFile(ConfigPath()); err == nil && len(strings.TrimSpace(string(data))) == 0 {
-		// An empty YAML document has no overrides. Point the shared loader at a
-		// missing sibling so it still applies SESHY_* environment values.
-		options.Path = ConfigPath() + ".empty"
-	}
-	cfg, err := sharedconfig.Load(defaults(), options)
+	cfg, err := sharedconfig.Load(defaults(), configOptions())
 	if err != nil {
 		return nil, err
 	}
 
-	// Tilde expansion for default repos
 	for i, p := range cfg.DefaultRepos {
-		cfg.DefaultRepos[i] = expandTilde(p)
+		cfg.DefaultRepos[i] = paths.ExpandHome(p)
 	}
 
 	return &cfg, nil
@@ -83,14 +75,6 @@ func Load() (*Config, error) {
 // Schema emits the JSON Schema used by YAML language servers.
 func Schema() ([]byte, error) {
 	return sharedconfig.Schema[Config]("Seshy configuration")
-}
-
-func expandTilde(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, _ := os.UserHomeDir()
-		return home + path[1:]
-	}
-	return path
 }
 
 // WriteDefault writes a default config file.
@@ -111,7 +95,7 @@ func WriteDefault() error {
 // sysinit paths manifest, which is the value nix wrote into config.yaml anyway.
 func GetSessionsRoot() string {
 	if cfg, err := Load(); err == nil && cfg.SessionsDir != "" {
-		return expandTilde(cfg.SessionsDir)
+		return paths.ExpandHome(cfg.SessionsDir)
 	}
 	return paths.SeshySessions()
 }
@@ -126,7 +110,7 @@ func EnsureSessionsRoot() error {
 // directory, which keeps archiving a same-filesystem rename.
 func GetArchiveRoot() string {
 	if cfg, err := Load(); err == nil && cfg.ArchiveDir != "" {
-		return expandTilde(cfg.ArchiveDir)
+		return paths.ExpandHome(cfg.ArchiveDir)
 	}
 	return filepath.Join(filepath.Dir(GetSessionsRoot()), "archive")
 }

@@ -21,7 +21,7 @@ var renameCmd = &cobra.Command{
 			return fmt.Errorf("failed to rename session: %w", err)
 		}
 
-		newPath, _ := session.GetPath(newName)
+		newPath, _ := session.Resolve(newName)
 		fmt.Fprintln(os.Stderr, ui.Successf("Renamed %s to %s", ui.AccentBold(oldName), ui.AccentBold(newName)))
 		fmt.Fprintf(os.Stderr, "  %s %s\n", ui.Faint("path:"), newPath)
 		fmt.Fprintln(os.Stderr, ui.Info("Note: branch names are not changed automatically."))

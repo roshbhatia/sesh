@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/roshbhatia/go-utils/ui"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/roshbhatia/seshy/internal/session"
 )
 
@@ -61,6 +63,12 @@ func runCmd(args ...string) (stdout, stderr string, err error) {
 		panic(pipeErr)
 	}
 	os.Stdout = w
+	origStderr := os.Stderr
+	er, ew, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		panic(pipeErr)
+	}
+	os.Stderr = ew
 
 	// Reset persistent flags before each run
 	greedyQuery = ""
@@ -72,15 +80,19 @@ func runCmd(args ...string) (stdout, stderr string, err error) {
 	newEmpty = false
 
 	rootCmd.SetArgs(args)
-	err = rootCmd.Execute()
+	err = Execute()
 
 	w.Close()
 	os.Stdout = origStdout
+	ew.Close()
+	os.Stderr = origStderr
 
-	var buf bytes.Buffer
+	var buf, errBuf bytes.Buffer
 	buf.ReadFrom(r)
 	r.Close()
-	return buf.String(), "", err
+	errBuf.ReadFrom(er)
+	er.Close()
+	return buf.String(), errBuf.String(), err
 }
 
 // ---------------------------------------------------------------------------
@@ -186,14 +198,19 @@ func TestGreedyMatchReturnsPointerToSliceElement(t *testing.T) {
 // list command
 // ---------------------------------------------------------------------------
 
+// TestListCommandNoSessions: the advice for an empty list is not data, so a
+// piped "sy list" stays empty and the prose goes to stderr.
 func TestListCommandNoSessions(t *testing.T) {
 	isolatedRoot(t)
-	stdout, _, err := runCmd("list")
+	stdout, stderr, err := runCmd("list")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if !strings.Contains(stdout, "No sessions") {
-		t.Errorf("expected 'No sessions' message, got: %q", stdout)
+	if stdout != "" {
+		t.Errorf("expected empty stdout for an empty list, got: %q", stdout)
+	}
+	if !strings.Contains(stderr, "No sessions") {
+		t.Errorf("expected 'No sessions' message on stderr, got: %q", stderr)
 	}
 }
 
@@ -218,12 +235,12 @@ func TestListCommandShowsSessions(t *testing.T) {
 
 func TestListAlias(t *testing.T) {
 	isolatedRoot(t)
-	stdout, _, err := runCmd("ls")
+	_, stderr, err := runCmd("ls")
 	if err != nil {
 		t.Fatalf("ls: %v", err)
 	}
-	if !strings.Contains(stdout, "No sessions") {
-		t.Errorf("expected 'No sessions' from ls alias, got: %q", stdout)
+	if !strings.Contains(stderr, "No sessions") {
+		t.Errorf("expected 'No sessions' from ls alias, got: %q", stderr)
 	}
 }
 
@@ -344,7 +361,7 @@ func TestDeleteForceRemovesLockedWorktree(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	sessionPath, _ := session.GetPath("stuck")
+	sessionPath, _ := session.Resolve("stuck")
 	worktree := filepath.Join(sessionPath, "r")
 	if out, err := exec.Command("git", "-C", repo, "worktree", "lock", worktree).CombinedOutput(); err != nil {
 		t.Fatalf("worktree lock: %v\n%s", err, out)
@@ -385,7 +402,7 @@ func TestDeleteWithoutForceRefusesLockedWorktree(t *testing.T) {
 		t.Fatalf("create: %v", err)
 	}
 
-	sessionPath, _ := session.GetPath("held")
+	sessionPath, _ := session.Resolve("held")
 	if out, err := exec.Command("git", "-C", repo, "worktree", "lock", filepath.Join(sessionPath, "r")).CombinedOutput(); err != nil {
 		t.Fatalf("worktree lock: %v\n%s", err, out)
 	}
@@ -558,7 +575,7 @@ func TestNewCommandEmptyFlag(t *testing.T) {
 	if _, _, err := runCmd("new", "solo", "--empty"); err != nil {
 		t.Fatalf("new --empty: %v", err)
 	}
-	path, err := session.GetPath("solo")
+	path, err := session.Resolve("solo")
 	if err != nil {
 		t.Fatalf("session not created: %v", err)
 	}
@@ -596,7 +613,7 @@ func TestNewCommandStdinNoLinesCreatesEmptySession(t *testing.T) {
 	if _, _, err := runCmd("new", "piped", "--stdin"); err != nil {
 		t.Fatalf("new --stdin: %v", err)
 	}
-	path, err := session.GetPath("piped")
+	path, err := session.Resolve("piped")
 	if err != nil {
 		t.Fatalf("session not created: %v", err)
 	}
@@ -889,4 +906,177 @@ func stripANSI(s string) string {
 		out.WriteByte(s[i])
 	}
 	return out.String()
+}
+
+// ---------------------------------------------------------------------------
+// repo arguments
+// ---------------------------------------------------------------------------
+
+func TestReadRepoArgsDashReadsStdin(t *testing.T) {
+	repos, fromStdin := readRepoArgs([]string{"/a", "-"}, false, strings.NewReader("/b\n\n/c\n"))
+	if !fromStdin {
+		t.Error("expected '-' to mark stdin as read")
+	}
+	if got := strings.Join(repos, ","); got != "/a,/b,/c" {
+		t.Errorf("repos = %q, want /a,/b,/c", got)
+	}
+}
+
+func TestReadRepoArgsWithoutStdin(t *testing.T) {
+	repos, fromStdin := readRepoArgs([]string{"/a"}, false, strings.NewReader("/ignored\n"))
+	if fromStdin {
+		t.Error("stdin must not be read without --stdin or '-'")
+	}
+	if len(repos) != 1 || repos[0] != "/a" {
+		t.Errorf("repos = %v, want [/a]", repos)
+	}
+}
+
+func TestReadRepoArgsFlagReadsStdin(t *testing.T) {
+	repos, fromStdin := readRepoArgs(nil, true, strings.NewReader(""))
+	if !fromStdin || len(repos) != 0 {
+		t.Errorf("repos = %v fromStdin = %v, want none and true", repos, fromStdin)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// confirmation prompt
+// ---------------------------------------------------------------------------
+
+// withStdin points os.Stdin at r for the duration of the test.
+func withStdin(t *testing.T, r *os.File) {
+	t.Helper()
+	orig := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = orig })
+}
+
+// TestDeleteRefusesToPromptWithoutTerminal: a piped stdin used to read EOF as
+// "no" and exit 0 with the session intact, which a script took for success.
+func TestDeleteRefusesToPromptWithoutTerminal(t *testing.T) {
+	isolatedRoot(t)
+	if _, _, err := runCmd("new", "keep", "--empty"); err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open devnull: %v", err)
+	}
+	defer devnull.Close()
+	withStdin(t, devnull)
+
+	_, _, err = runCmd("delete", "keep")
+	if !errors.Is(err, exitcode.ErrRefused) {
+		t.Fatalf("expected ErrRefused, got %v", err)
+	}
+	if want := "refusing to prompt; stdin is not a terminal (pass --force)"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), want)
+	}
+	if !session.Exists("keep") {
+		t.Error("a refused delete must leave the session in place")
+	}
+}
+
+func TestRemoveRefusesToPromptWithoutTerminal(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "r")
+	setupGitRepo(t, repo)
+	if _, err := session.Create("keep-repo", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open devnull: %v", err)
+	}
+	defer devnull.Close()
+	withStdin(t, devnull)
+
+	_, _, err = runCmd("remove", "keep-repo", "r")
+	if !errors.Is(err, exitcode.ErrRefused) {
+		t.Fatalf("expected ErrRefused, got %v", err)
+	}
+	sessionPath, _ := session.Resolve("keep-repo")
+	if len(session.GetSessionRepoInfos(sessionPath)) != 1 {
+		t.Error("a refused remove must leave the repo in place")
+	}
+}
+
+// TestDeleteForceSkipsPrompt keeps --force implying "yes" until --yes exists.
+func TestDeleteForceSkipsPrompt(t *testing.T) {
+	isolatedRoot(t)
+	if _, _, err := runCmd("new", "gone", "--empty"); err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open devnull: %v", err)
+	}
+	defer devnull.Close()
+	withStdin(t, devnull)
+
+	if _, _, err := runCmd("delete", "--force", "gone"); err != nil {
+		t.Fatalf("delete --force: %v", err)
+	}
+	if session.Exists("gone") {
+		t.Error("--force did not delete the session")
+	}
+}
+
+// TestPrintSessionListPipedBytes pins the plain shape consumers parse: a
+// two-space gutter, columns padded to the widest cell, no trailing padding.
+func TestPrintSessionListPipedBytes(t *testing.T) {
+	ui.SetStdoutColorsEnabled(false)
+	now := time.Now()
+	sessions := []session.Session{
+		{Name: "my-session", RepoCount: 1, LastModified: now},
+		{Name: "sh", RepoCount: 12, LastModified: now},
+	}
+
+	origStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := printSessionList(sessions, "", "none")
+	w.Close()
+	os.Stdout = origStdout
+	if err != nil {
+		t.Fatalf("printSessionList: %v", err)
+	}
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	r.Close()
+
+	want := "SESSION     REPOS  MODIFIED\n" +
+		"my-session  1      just now\n" +
+		"sh          12     just now\n"
+	if buf.String() != want {
+		t.Errorf("piped list bytes changed:\n got %q\nwant %q", buf.String(), want)
+	}
+}
+
+// TestStatusPipedHasNoEscapes: the status table used to color by stderr's
+// TTY-ness, so "sy status | cat -A" showed escapes.
+func TestStatusPipedHasNoEscapes(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "r")
+	setupGitRepo(t, repo)
+	if _, err := session.Create("plain", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ui.SetColorsEnabled(true)
+	defer ui.SetColorsEnabled(false)
+
+	stdout, _, err := runCmd("status", "plain")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if strings.Contains(stdout, "\033[") {
+		t.Errorf("piped status carries ANSI escapes: %q", stdout)
+	}
+	for _, want := range []string{"session  plain", "NAME  BRANCH", "r     sy/plain/r"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("status output lacks %q:\n%s", want, stdout)
+		}
+	}
 }

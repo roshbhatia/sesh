@@ -1,15 +1,17 @@
 package session
 
 import (
+	"bytes"
 	"fmt"
 	"os/user"
-	"strings"
+	"text/template"
 
+	"github.com/roshbhatia/go-utils/git"
 	"github.com/roshbhatia/seshy/internal/tmpl"
 )
 
-// RenderBranchName evaluates a Go template string with the given session and repo names.
-// Uses tmpl.RenderString for consistent template handling across the codebase.
+// RenderBranchName evaluates a Go template string with the given session and
+// repo names, then checks the result against git's own branch-name rules.
 func RenderBranchName(tmplStr string, sessionName string, repo string) (string, error) {
 	username := ""
 	if u, err := user.Current(); err == nil {
@@ -22,44 +24,45 @@ func RenderBranchName(tmplStr string, sessionName string, repo string) (string, 
 		User:    username,
 	}
 
-	name, err := tmpl.RenderString(tmplStr, data)
+	parsed, err := template.New("branch").Option("missingkey=error").Parse(tmplStr)
 	if err != nil {
 		return "", fmt.Errorf("invalid branch template %q: %w", tmplStr, err)
 	}
+	var rendered bytes.Buffer
+	if err := parsed.Execute(&rendered, data); err != nil {
+		return "", fmt.Errorf("invalid branch template %q: %w", tmplStr, err)
+	}
+	name := rendered.String()
 
-	if err := ValidateBranchName(name); err != nil {
+	if err := CheckBranchName(name); err != nil {
 		return "", err
 	}
-
 	return name, nil
 }
 
-// ValidateBranchName checks that a branch name is valid for git.
-func ValidateBranchName(name string) error {
-	if name == "" {
-		return fmt.Errorf("branch name cannot be empty")
+// CheckBranchName asks git whether name is a valid branch name. A rejection
+// is a *BranchNameError wrapping git's *RefFormatError, so git.ExitStatus
+// still reads git's own status from it.
+func CheckBranchName(name string) error {
+	err := git.CheckRefFormat(name)
+	if err == nil {
+		return nil
 	}
-	if strings.Contains(name, " ") {
-		return fmt.Errorf("branch name %q contains spaces", name)
+	if git.ExitStatus(err) < 0 {
+		return err
 	}
-	if strings.Contains(name, "..") {
-		return fmt.Errorf("branch name %q contains '..'", name)
-	}
-	for _, c := range name {
-		if c < 32 || c == 127 {
-			return fmt.Errorf("branch name %q contains control characters", name)
-		}
-	}
-	for _, bad := range []string{"~", "^", ":", "\\", "?", "*", "["} {
-		if strings.Contains(name, bad) {
-			return fmt.Errorf("branch name %q contains invalid character %q", name, bad)
-		}
-	}
-	if strings.HasSuffix(name, ".lock") {
-		return fmt.Errorf("branch name %q ends with .lock", name)
-	}
-	if strings.HasSuffix(name, ".") {
-		return fmt.Errorf("branch name %q ends with '.'", name)
-	}
-	return nil
+	return &BranchNameError{Name: name, Err: err}
 }
+
+// BranchNameError reports a branch name that git rejects. Its message is
+// git's, minus the "fatal:" label that the caller adds when it prints.
+type BranchNameError struct {
+	Name string
+	Err  error
+}
+
+func (e *BranchNameError) Error() string {
+	return fmt.Sprintf("'%s' is not a valid branch name", e.Name)
+}
+
+func (e *BranchNameError) Unwrap() error { return e.Err }

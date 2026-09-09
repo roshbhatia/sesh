@@ -75,7 +75,7 @@ func TestCreateGitModeIgnoresEntriesKeepsArtifactsTrackable(t *testing.T) {
 		t.Fatalf("expected 2 entries, got %d", len(infos))
 	}
 
-	sessionPath, err := GetPath("gitsess")
+	sessionPath, err := Resolve("gitsess")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -115,7 +115,7 @@ func TestCreateNonGitModeHasNoRepoOrIgnore(t *testing.T) {
 		t.Fatalf("Create: %v", err)
 	}
 
-	sessionPath, err := GetPath("plainsess")
+	sessionPath, err := Resolve("plainsess")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -163,7 +163,7 @@ func TestAddReposUpdatesIgnore(t *testing.T) {
 		t.Fatalf("AddRepos: %v", err)
 	}
 
-	sessionPath, err := GetPath("addsess")
+	sessionPath, err := Resolve("addsess")
 	if err != nil {
 		t.Fatal(err)
 	}

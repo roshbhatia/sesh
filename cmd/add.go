@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -27,11 +26,7 @@ var addCmd = &cobra.Command{
 	ValidArgsFunction: completeSessionNames,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		name := args[0]
-		if !session.Exists(name) {
-			return fmt.Errorf("session %s not found", ui.AccentBold(name))
-		}
-
-		sessionPath, err := session.GetPath(name)
+		sessionPath, err := session.Resolve(name)
 		if err != nil {
 			return err
 		}
@@ -41,19 +36,9 @@ var addCmd = &cobra.Command{
 			return fmt.Errorf("loading config: %w", err)
 		}
 
-		repos := args[1:]
+		repos, fromStdin := readRepoArgs(args[1:], addStdin, os.Stdin)
 
-		if addStdin {
-			scanner := bufio.NewScanner(os.Stdin)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if line != "" {
-					repos = append(repos, line)
-				}
-			}
-		}
-
-		if len(repos) == 0 {
+		if len(repos) == 0 && !fromStdin {
 			candidates, err := runSource(cfg.RepoSource)
 			if err != nil {
 				return fmt.Errorf("repo source: %w", err)
@@ -109,6 +94,8 @@ var addCmd = &cobra.Command{
 			return fmt.Errorf("failed to add repositories: %w", err)
 		}
 
+		warnReusedBranches(newRepos)
+
 		// Build template data with ALL repos (existing + new)
 		allRepos := session.GetSessionRepoInfos(sessionPath)
 		data := session.BuildTemplateData(name, sessionPath, allRepos)
@@ -135,7 +122,7 @@ var addCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, ui.Warningf("Skipped %s (already in session)", s))
 		}
 		for repo, e := range result.Errors {
-			fmt.Fprintln(os.Stderr, ui.Errorf("Failed %s: %v", repo, e))
+			ui.Diagnostic(os.Stderr, "error", repo+": "+Message(e))
 		}
 
 		fmt.Fprintln(os.Stderr, ui.Successf("Added %d/%d repo(s) to %s", len(result.Added), len(repos), ui.AccentBold(name)))
