@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -37,19 +36,9 @@ var addCmd = &cobra.Command{
 			return fmt.Errorf("loading config: %w", err)
 		}
 
-		repos := args[1:]
+		repos, fromStdin := readRepoArgs(args[1:], addStdin, os.Stdin)
 
-		if addStdin {
-			scanner := bufio.NewScanner(os.Stdin)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if line != "" {
-					repos = append(repos, line)
-				}
-			}
-		}
-
-		if len(repos) == 0 {
+		if len(repos) == 0 && !fromStdin {
 			candidates, err := runSource(cfg.RepoSource)
 			if err != nil {
 				return fmt.Errorf("repo source: %w", err)

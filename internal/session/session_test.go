@@ -1071,3 +1071,57 @@ func TestCreateWorktreeReusesExistingBranch(t *testing.T) {
 		t.Error("expected reused to be false for a new branch")
 	}
 }
+
+// ---------------------------------------------------------------------------
+// NormalizeRepoPath
+// ---------------------------------------------------------------------------
+
+func TestNormalizeRepoPathSubdirectoryNamesToplevel(t *testing.T) {
+	tmp := t.TempDir()
+	repoDir := filepath.Join(tmp, "repo")
+	setupTestGitRepo(t, repoDir)
+	sub := filepath.Join(repoDir, "pkg", "deep")
+	if err := os.MkdirAll(sub, 0755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+
+	got, err := NormalizeRepoPath(sub)
+	if err != nil {
+		t.Fatalf("NormalizeRepoPath: %v", err)
+	}
+	want, _ := git.Root(repoDir)
+	if got != want {
+		t.Errorf("got %q, want toplevel %q", got, want)
+	}
+}
+
+func TestNormalizeRepoPathMissingIsAnError(t *testing.T) {
+	_, err := NormalizeRepoPath(filepath.Join(t.TempDir(), "absent"))
+	if err == nil || !strings.HasPrefix(err.Error(), "no such directory: ") {
+		t.Errorf("expected 'no such directory' error, got %v", err)
+	}
+}
+
+func TestNormalizeRepoPathPlainDirectoryIsAbsolute(t *testing.T) {
+	tmp := t.TempDir()
+	plain := filepath.Join(tmp, "plain")
+	os.MkdirAll(plain, 0755)
+	got, err := NormalizeRepoPath(plain)
+	if err != nil {
+		t.Fatalf("NormalizeRepoPath: %v", err)
+	}
+	if !filepath.IsAbs(got) {
+		t.Errorf("expected an absolute path, got %q", got)
+	}
+}
+
+func TestCreateRefusesMissingRepoPath(t *testing.T) {
+	isolatedRoot(t)
+	_, err := Create("ghost", []string{filepath.Join(t.TempDir(), "absent")}, defaultOpts())
+	if err == nil {
+		t.Fatal("expected Create to fail for a missing repo path")
+	}
+	if Exists("ghost") {
+		t.Error("session left behind after a failed create")
+	}
+}

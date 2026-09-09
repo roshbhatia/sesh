@@ -890,3 +890,34 @@ func stripANSI(s string) string {
 	}
 	return out.String()
 }
+
+// ---------------------------------------------------------------------------
+// repo arguments
+// ---------------------------------------------------------------------------
+
+func TestReadRepoArgsDashReadsStdin(t *testing.T) {
+	repos, fromStdin := readRepoArgs([]string{"/a", "-"}, false, strings.NewReader("/b\n\n/c\n"))
+	if !fromStdin {
+		t.Error("expected '-' to mark stdin as read")
+	}
+	if got := strings.Join(repos, ","); got != "/a,/b,/c" {
+		t.Errorf("repos = %q, want /a,/b,/c", got)
+	}
+}
+
+func TestReadRepoArgsWithoutStdin(t *testing.T) {
+	repos, fromStdin := readRepoArgs([]string{"/a"}, false, strings.NewReader("/ignored\n"))
+	if fromStdin {
+		t.Error("stdin must not be read without --stdin or '-'")
+	}
+	if len(repos) != 1 || repos[0] != "/a" {
+		t.Errorf("repos = %v, want [/a]", repos)
+	}
+}
+
+func TestReadRepoArgsFlagReadsStdin(t *testing.T) {
+	repos, fromStdin := readRepoArgs(nil, true, strings.NewReader(""))
+	if !fromStdin || len(repos) != 0 {
+		t.Errorf("repos = %v fromStdin = %v, want none and true", repos, fromStdin)
+	}
+}

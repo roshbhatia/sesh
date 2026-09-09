@@ -1,7 +1,6 @@
 package cmd
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
@@ -40,26 +39,16 @@ var newCmd = &cobra.Command{
 			return fmt.Errorf("loading config: %w", err)
 		}
 
-		repos := args[1:]
+		repos, fromStdin := readRepoArgs(args[1:], newStdin, os.Stdin)
 
 		if newEmpty && len(repos) > 0 {
 			return fmt.Errorf("--empty takes no repositories")
 		}
 
-		if newStdin {
-			scanner := bufio.NewScanner(os.Stdin)
-			for scanner.Scan() {
-				line := scanner.Text()
-				if line != "" {
-					repos = append(repos, line)
-				}
-			}
-		}
-
 		// The picker is the only interactive path here. --empty and --stdin both
 		// say the caller already supplied the repo list, so an empty list means an
 		// empty session instead of a prompt no one is there to answer.
-		if len(repos) == 0 && !newEmpty && !newStdin {
+		if len(repos) == 0 && !newEmpty && !fromStdin {
 			candidates, err := runSource(cfg.RepoSource)
 			if err != nil {
 				return fmt.Errorf("repo source: %w", err)
@@ -84,7 +73,7 @@ var newCmd = &cobra.Command{
 
 		repoInfos, err := session.Create(name, repos, opts)
 		if err != nil {
-			return fmt.Errorf("failed to create session: %w", err)
+			return err
 		}
 
 		warnReusedBranches(repoInfos)

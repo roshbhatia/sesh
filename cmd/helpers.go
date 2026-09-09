@@ -1,8 +1,10 @@
 package cmd
 
 import (
+	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"strings"
@@ -65,6 +67,30 @@ func runPicker(command string, input []string) ([]string, error) {
 		return nil, errNothingSelected
 	}
 	return result, nil
+}
+
+// readRepoArgs returns the repo paths named on the command line, plus one per
+// stdin line when --stdin is set or an argument is "-". fromStdin reports that
+// stdin was consulted, so an empty list from it means "no repos" rather than
+// "ask the picker".
+func readRepoArgs(args []string, useStdin bool, stdin io.Reader) (repos []string, fromStdin bool) {
+	for _, arg := range args {
+		if arg == "-" {
+			useStdin = true
+			continue
+		}
+		repos = append(repos, arg)
+	}
+	if !useStdin {
+		return repos, false
+	}
+	scanner := bufio.NewScanner(stdin)
+	for scanner.Scan() {
+		if line := scanner.Text(); line != "" {
+			repos = append(repos, line)
+		}
+	}
+	return repos, true
 }
 
 // prependDefaults adds default repos to the front of candidates, deduplicating.

@@ -113,6 +113,31 @@ func Exists(name string) bool {
 	return err == nil
 }
 
+// NormalizeRepoPath turns a repo argument into the path seshy records: the
+// toplevel of its git repository, so a subdirectory names its repo, or the
+// absolute path of a plain directory. A missing path is an error here rather
+// than a dangling symlink in the session.
+func NormalizeRepoPath(path string) (string, error) {
+	abs, err := filepath.Abs(path)
+	if err != nil {
+		return "", err
+	}
+	info, err := os.Stat(abs)
+	if errors.Is(err, os.ErrNotExist) {
+		return "", fmt.Errorf("no such directory: %s", path)
+	}
+	if err != nil {
+		return "", err
+	}
+	if !info.IsDir() {
+		return "", fmt.Errorf("not a directory: %s", path)
+	}
+	if root, err := git.Root(abs); err == nil {
+		return root, nil
+	}
+	return abs, nil
+}
+
 // branchForRepo computes the branch name for a repo.
 func branchForRepo(branchFormat, branchOverride, sessionName, repoPath string) (string, error) {
 	if branchOverride != "" {
@@ -179,9 +204,10 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 	}
 
 	for _, repoPath := range repoPaths {
-		// Resolve to absolute path so symlinks are never self-referential.
-		if abs, err := filepath.Abs(repoPath); err == nil {
-			repoPath = abs
+		repoPath, err := NormalizeRepoPath(repoPath)
+		if err != nil {
+			cleanup()
+			return nil, err
 		}
 
 		if git.IsRepo(repoPath) {
@@ -308,27 +334,28 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 		existingSet[resolveRepoPath(s)] = true
 	}
 
-	for _, repoPath := range repoPaths {
-		// Resolve to absolute path so symlinks are never self-referential.
-		if abs, err := filepath.Abs(repoPath); err == nil {
-			repoPath = abs
+	for _, given := range repoPaths {
+		repoPath, err := NormalizeRepoPath(given)
+		if err != nil {
+			result.Errors[given] = err
+			continue
 		}
 
 		resolved := resolveRepoPath(repoPath)
 		if existingSet[resolved] {
-			result.Skipped = append(result.Skipped, repoPath)
+			result.Skipped = append(result.Skipped, given)
 			continue
 		}
 
 		if git.IsRepo(repoPath) {
 			branch, err := branchForRepo(opts.BranchFormat, opts.BranchOverride, name, repoPath)
 			if err != nil {
-				result.Errors[repoPath] = err
+				result.Errors[given] = err
 				continue
 			}
 			wtPath, reused, err := CreateWorktree(repoPath, sessionPath, branch)
 			if err != nil {
-				result.Errors[repoPath] = err
+				result.Errors[given] = err
 				continue
 			}
 			newRepos = append(newRepos, RepoInfo{
@@ -341,7 +368,7 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 		} else {
 			linkPath, err := CreateSymlink(repoPath, sessionPath)
 			if err != nil {
-				result.Errors[repoPath] = err
+				result.Errors[given] = err
 				continue
 			}
 			newRepos = append(newRepos, RepoInfo{
@@ -351,7 +378,7 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 			})
 		}
 
-		result.Added = append(result.Added, repoPath)
+		result.Added = append(result.Added, given)
 		existingSet[resolved] = true
 	}
 
