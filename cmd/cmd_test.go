@@ -80,7 +80,7 @@ func runCmd(args ...string) (stdout, stderr string, err error) {
 	newEmpty = false
 
 	rootCmd.SetArgs(args)
-	err = rootCmd.Execute()
+	err = Execute()
 
 	w.Close()
 	os.Stdout = origStdout

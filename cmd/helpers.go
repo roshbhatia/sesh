@@ -27,7 +27,7 @@ func runSource(command string) ([]string, error) {
 	cmd.Stderr = os.Stderr
 	out, err := cmd.Output()
 	if err != nil {
-		return nil, fmt.Errorf("repo source command failed: %w\n  command: %s", err, command)
+		return nil, fmt.Errorf("repo source command failed: %v\n  command: %s", err, command)
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	var result []string
@@ -55,7 +55,7 @@ func runPicker(command string, input []string) ([]string, error) {
 				return nil, errCancelled
 			}
 		}
-		return nil, fmt.Errorf("picker command failed: %w", err)
+		return nil, fmt.Errorf("picker command failed: %v", err)
 	}
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	var result []string
@@ -81,7 +81,7 @@ func confirm(question string, force bool) (ok bool, err error) {
 		return true, nil
 	}
 	if !terminal.IsTTY(os.Stdin) {
-		return false, fmt.Errorf("refusing to prompt; stdin is not a terminal (pass --force): %w", exitcode.ErrRefused)
+		return false, exitcode.Refusedf("refusing to prompt; stdin is not a terminal (pass --force)")
 	}
 	fmt.Fprintf(os.Stderr, "%s [y/N] ", question)
 	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')

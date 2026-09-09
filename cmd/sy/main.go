@@ -4,10 +4,11 @@ import (
 	"os"
 
 	"github.com/roshbhatia/seshy/cmd"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 )
 
 func main() {
-	if err := cmd.Execute(); err != nil {
-		os.Exit(1)
-	}
+	err := cmd.Execute()
+	cmd.Report(os.Stderr, err)
+	os.Exit(exitcode.Of(err))
 }

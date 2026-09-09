@@ -7,6 +7,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/spf13/cobra"
 )
 
@@ -50,7 +51,7 @@ using greedy matching. Commands and aliases always run as commands. Use
 			}
 			fmt.Print(generated)
 		default:
-			return fmt.Errorf("unsupported shell %q — supported: zsh, bash, fish, nu", args[0])
+			return exitcode.Usagef("unsupported shell %q (supported: zsh, bash, fish, nu)", args[0])
 		}
 		return nil
 	},

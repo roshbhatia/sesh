@@ -105,7 +105,7 @@ func resolveIn(root, kind, name string) (string, error) {
 			return filepath.Join(root, name), nil
 		}
 	}
-	return "", fmt.Errorf("%s '%s' %w", kind, name, exitcode.ErrNotFound)
+	return "", exitcode.NotFoundf("%s '%s' not found", kind, name)
 }
 
 // Exists checks if a session exists.
@@ -125,7 +125,7 @@ func NormalizeRepoPath(path string) (string, error) {
 	}
 	info, err := os.Stat(abs)
 	if errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("no such directory: %s", path)
+		return "", exitcode.NotFoundf("no such directory: %s", path)
 	}
 	if err != nil {
 		return "", err
@@ -215,7 +215,7 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 			branch, err := branchForRepo(opts.BranchFormat, opts.BranchOverride, name, repoPath)
 			if err != nil {
 				cleanup()
-				return nil, fmt.Errorf("branch name for %s: %w", repoPath, err)
+				return nil, err
 			}
 
 			wtPath, reused, err := CreateWorktree(repoPath, sessionPath, branch)

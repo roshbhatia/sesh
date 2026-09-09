@@ -26,7 +26,7 @@ func resolveSession(query string) (session.Session, error) {
 	}
 	match := greedyMatch(query, sessions)
 	if match == nil {
-		return session.Session{}, fmt.Errorf("no session matches '%s': %w", query, exitcode.ErrNotFound)
+		return session.Session{}, exitcode.NotFoundf("no session matches '%s'", query)
 	}
 	return *match, nil
 }

@@ -33,10 +33,11 @@ Exits non-zero when the working directory is outside every session.`,
 		}
 		found, ok := session.Containing(dir)
 		if !ok {
+			err := exitcode.NotFoundf("not inside a session")
 			if currentQuiet {
-				cmd.SilenceErrors = true
+				return exitcode.Quiet(err)
 			}
-			return fmt.Errorf("not inside a session: %w", exitcode.ErrNotFound)
+			return err
 		}
 		if currentPath {
 			fmt.Println(found.Path)

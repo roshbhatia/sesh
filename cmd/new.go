@@ -8,6 +8,7 @@ import (
 
 	"github.com/roshbhatia/go-utils/ui"
 	"github.com/roshbhatia/seshy/internal/config"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/roshbhatia/seshy/internal/hook"
 	"github.com/roshbhatia/seshy/internal/session"
 	"github.com/roshbhatia/seshy/internal/tmpl"
@@ -31,7 +32,7 @@ var newCmd = &cobra.Command{
 			return err
 		}
 		if session.Exists(name) {
-			return fmt.Errorf("session %s already exists", ui.AccentBold(name))
+			return fmt.Errorf("session '%s' already exists", name)
 		}
 
 		cfg, err := config.Load()
@@ -42,7 +43,7 @@ var newCmd = &cobra.Command{
 		repos, fromStdin := readRepoArgs(args[1:], newStdin, os.Stdin)
 
 		if newEmpty && len(repos) > 0 {
-			return fmt.Errorf("--empty takes no repositories")
+			return exitcode.Usagef("--empty takes no repositories")
 		}
 
 		// The picker is the only interactive path here. --empty and --stdin both

@@ -316,6 +316,45 @@ scenario_delete_and_remove() {
   assert_dir_exists "repository removal keeps the session" "$sess_root/remove-test"
 }
 
+# Scenario 8: exit statuses a script can branch on
+scenario_exit_statuses() {
+  local tmp="$1"
+  local sess_root="$tmp/state/seshy/sessions"
+  local code out
+
+  make_git_repo "$tmp/repos/api" "api"
+
+  sy path nope 2> /dev/null && code=0 || code=$?
+  [ "$code" -eq 3 ] || die "unknown session should exit 3, got $code"
+
+  sy list --bogus 2> /dev/null && code=0 || code=$?
+  [ "$code" -eq 2 ] || die "unknown flag should exit 2, got $code"
+
+  out=$(sy new bad -b HEAD "$tmp/repos/api" 2>&1) && code=0 || code=$?
+  [ "$code" -eq 128 ] || die "invalid branch name should exit 128, got $code"
+  assert_contains "git's message" "$out" "fatal: 'HEAD' is not a valid branch name"
+  assert_dir_missing "failed new leaves nothing" "$sess_root/bad"
+
+  sy new feat "$tmp/repos/api" 2> /dev/null
+  sy delete feat < /dev/null 2> /dev/null && code=0 || code=$?
+  [ "$code" -eq 4 ] || die "prompt without a terminal should exit 4, got $code"
+  assert_dir_exists "refused delete keeps the session" "$sess_root/feat"
+
+  out=$(sy status feat | cat -v)
+  assert_not_contains "piped status has no escapes" "$out" "^["
+  assert_contains "piped status names the branch" "$out" "sy/feat/api"
+
+  out=$(sy new missing "$tmp/repos/absent" 2>&1) && code=0 || code=$?
+  [ "$code" -ne 0 ] || die "missing repo path should fail"
+  assert_contains "missing repo message" "$out" "fatal: no such directory"
+  [ ! -e "$sess_root/missing" ] || die "missing repo must not leave a session behind"
+
+  # A subdirectory names its repository, and the worktree is of the toplevel.
+  mkdir -p "$tmp/repos/api/internal/deep"
+  sy new sub "$tmp/repos/api/internal/deep" 2> /dev/null
+  assert_dir_exists "worktree named after the toplevel" "$sess_root/sub/api"
+}
+
 # ── run all scenarios ─────────────────────────────────────────────────────────
 
 echo "Running e2e scenarios..."
@@ -328,6 +367,7 @@ run_scenario "greedy matching priority" scenario_greedy_priority
 run_scenario "multi-session isolation" scenario_multi_session_isolation
 run_scenario "greedy single-line output" scenario_greedy_single_line_output
 run_scenario "delete alias and repository removal" scenario_delete_and_remove
+run_scenario "exit statuses" scenario_exit_statuses
 
 echo "Results: $PASS passed, $FAIL failed"
 

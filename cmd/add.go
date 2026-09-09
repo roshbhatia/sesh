@@ -122,7 +122,7 @@ var addCmd = &cobra.Command{
 			fmt.Fprintln(os.Stderr, ui.Warningf("Skipped %s (already in session)", s))
 		}
 		for repo, e := range result.Errors {
-			fmt.Fprintln(os.Stderr, ui.Errorf("Failed %s: %v", repo, e))
+			ui.Diagnostic(os.Stderr, "error", repo+": "+Message(e))
 		}
 
 		fmt.Fprintln(os.Stderr, ui.Successf("Added %d/%d repo(s) to %s", len(result.Added), len(repos), ui.AccentBold(name)))
