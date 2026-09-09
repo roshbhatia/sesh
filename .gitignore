@@ -10,3 +10,5 @@ coverage.html
 .task/
 
 sesh
+
+.release-extras/

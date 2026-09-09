@@ -2,6 +2,7 @@ version: 2
 
 before:
   hooks:
+    - python3 hack/release-scripts.py --version {{ .Version }} --all --include-darwin-amd64 --output .release-extras
     - go run ./cmd/sy generate --check
 
 builds:
@@ -36,3 +37,7 @@ checksum:
 
 changelog:
   use: github-native
+
+release:
+  extra_files:
+    - glob: .release-extras/*

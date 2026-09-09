@@ -34,7 +34,20 @@
       eachSystem = nixpkgs.lib.genAttrs supportedSystems;
     in
     {
-      formatter = eachSystem (system: nixpkgs.legacyPackages.${system}.nixfmt);
+      formatter = eachSystem (
+        system:
+        let
+          pkgs = nixpkgs.legacyPackages.${system};
+        in
+        pkgs.writeShellApplication {
+          name = "seshy-format";
+          runtimeInputs = [
+            pkgs.fd
+            pkgs.nixfmt
+          ];
+          text = ''exec fd --extension nix --type file --exec-batch nixfmt "$@"'';
+        }
+      );
 
       packages = eachSystem (
         system:
@@ -107,6 +120,19 @@
         {
           inherit seshy;
           default = seshy;
+          provider-wezterm = import ./extras/wezterm {
+            inherit pkgs;
+            core = seshy;
+          };
+          extras = self.packages.${system}.provider-wezterm;
+          full = pkgs.symlinkJoin {
+            name = "seshy-full";
+            paths = [
+              seshy
+              self.packages.${system}.extras
+            ];
+            meta = seshy.meta;
+          };
         }
       );
 
@@ -218,6 +244,8 @@
         {
           default = pkgs.mkShellNoCC {
             packages = [
+              pkgs.python3
+              pkgs.ffmpeg
               pkgs.actionlint
               pkgs.bash
               pkgs.fish

@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "providers": [
+    {
+      "name": "wezterm",
+      "summary": "Select a checkout group for token parser review",
+      "replay": false,
+      "core": "seshy",
+      "nix": "github:roshbhatia/seshy#provider-wezterm",
+      "brew": "seshy-provider-wezterm",
+      "binary": "seshy-picker",
+      "dependencies": [
+        "python@3.13",
+        "roshbhatia/tap/seshy"
+      ],
+      "manifest_path": "share/wezterm/providers/seshy.json"
+    }
+  ],
+  "packages": [
+    {
+      "name": "seshy-provider-wezterm",
+      "kind": "provider",
+      "binary": "seshy-picker",
+      "description": "Select a checkout group for token parser review",
+      "archive": "seshy_provider_wezterm_%{version}_%{os}_%{arch}.tar.gz",
+      "share": [
+        "share/wezterm/providers/seshy.json"
+      ],
+      "python_script": true,
+      "checksum": "sidecar",
+      "dependencies": [
+        "python@3.13",
+        "roshbhatia/tap/seshy"
+      ]
+    }
+  ]
+}
