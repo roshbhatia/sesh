@@ -282,6 +282,99 @@ test_worktree_create_and_path() {
   assert_contains "$out" "wt-session"
 }
 
+test_list_format_json_carries_id_and_archived() {
+  local tmp="$1"
+  sess_root="$tmp/state/seshy/sessions"
+  mkdir -p "$sess_root/plumb"
+  out=$(sy list --format json)
+  assert_contains "$out" '"id": "seshy:plumb"'
+  assert_contains "$out" '"archived": false'
+  alias_out=$(sy list --json)
+  if [ "$out" != "$alias_out" ]; then
+    echo "  --format json and --json differ"
+    return 1
+  fi
+}
+
+test_open_json_and_missing_exits_three() {
+  local tmp="$1"
+  sess_root="$tmp/state/seshy/sessions"
+  mkdir -p "$sess_root/enter"
+  out=$(sy open enter --format json)
+  assert_contains "$out" '"version": "seshy.open/v1"'
+  assert_contains "$out" '"SESHY_SESSION": "enter"'
+  path=$(sy open enter)
+  assert_contains "$path" "enter"
+  sy open gone --format json 2>/dev/null && code=0 || code=$?
+  [ "$code" -eq 3 ] || { echo "  open missing exited $code, want 3"; return 1; }
+}
+
+test_source_list_is_a_catalog() {
+  local tmp="$1"
+  sess_root="$tmp/state/seshy/sessions"
+  mkdir -p "$sess_root/rowed"
+  out=$(sy source list)
+  assert_contains "$out" '"version": "roster.catalog/v1"'
+  assert_contains "$out" '"source": "seshy"'
+  assert_contains "$out" '"id": "seshy:rowed"'
+  assert_contains "$out" '"kind": "local"'
+}
+
+test_provider_validate_and_list() {
+  local tmp="$1"
+  sess_root="$tmp/state/seshy/sessions"
+  mkdir -p "$sess_root/one" "$sess_root/two"
+  frame='{"version":"provider/v1","kind":"request","requestId":"r","capability":"provider.validate"}'
+  out=$(printf '%s' "$frame" | sy provider)
+  assert_contains "$out" '"status":"ok"'
+  assert_contains "$out" '{"ok":true}'
+  list_frame='{"version":"provider/v1","kind":"request","requestId":"r2","capability":"source.list"}'
+  list_out=$(printf '%s' "$list_frame" | sy provider)
+  assert_contains "$list_out" 'roster.catalog/v1'
+  assert_contains "$list_out" 'seshy:one'
+  assert_contains "$list_out" 'seshy:two'
+}
+
+test_delete_yes_skips_prompt() {
+  local tmp="$1"
+  sess_root="$tmp/state/seshy/sessions"
+  mkdir -p "$sess_root/drop"
+  sy delete --yes drop </dev/null >/dev/null 2>&1
+  if [ -d "$sess_root/drop" ]; then
+    echo "  --yes did not delete the session"
+    return 1
+  fi
+  mkdir -p "$sess_root/refuse"
+  sy delete refuse </dev/null 2>/dev/null && code=0 || code=$?
+  [ "$code" -eq 4 ] || { echo "  delete without a terminal exited $code, want 4"; return 1; }
+  [ -d "$sess_root/refuse" ] || { echo "  refused delete removed the session"; return 1; }
+}
+
+test_prune_dry_run_lists_orphan_branch() {
+  local tmp="$1"
+  make_git_repo "$tmp/repo"
+  sy new feat "$tmp/repo" >/dev/null 2>&1
+  sess_root="$tmp/state/seshy/sessions"
+  rm -rf "$sess_root/feat"
+  out=$(sy prune --dry-run "$tmp/repo" 2>&1)
+  assert_contains "$out" "would delete branch sy/feat/repo"
+  git -C "$tmp/repo" rev-parse --verify --quiet refs/heads/sy/feat/repo >/dev/null || {
+    echo "  dry run deleted the branch"
+    return 1
+  }
+}
+
+test_git_config_branch_format_override() {
+  local tmp="$1"
+  make_git_repo "$tmp/repo"
+  git -C "$tmp/repo" config seshy.branchFormat 'gitcfg/{{.Session}}/{{.Repo}}'
+  sy new feat "$tmp/repo" >/dev/null 2>&1
+  git -C "$tmp/repo" rev-parse --verify --quiet refs/heads/gitcfg/feat/repo >/dev/null || {
+    echo "  git config seshy.branchFormat did not name the branch"
+    return 1
+  }
+}
+
 # ── run all ──────────────────────────────────────────────────────────────────
 
 echo "Running integration tests..."
@@ -306,6 +399,13 @@ run_test "list shows session" test_list_shows_session
 run_test "list shows multiple" test_list_shows_multiple
 run_test "shell wrapper reserves commands" test_bash_wrapper_reserves_commands
 run_test "worktree create and path" test_worktree_create_and_path
+run_test "list --format json carries id and archived" test_list_format_json_carries_id_and_archived
+run_test "open json and missing exits 3" test_open_json_and_missing_exits_three
+run_test "source list is a catalog" test_source_list_is_a_catalog
+run_test "provider validate and list" test_provider_validate_and_list
+run_test "delete --yes skips the prompt" test_delete_yes_skips_prompt
+run_test "prune --dry-run lists the orphan branch" test_prune_dry_run_lists_orphan_branch
+run_test "git config branchFormat override" test_git_config_branch_format_override
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
