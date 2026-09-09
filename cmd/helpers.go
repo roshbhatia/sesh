@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/roshbhatia/go-utils/ui"
 	"github.com/roshbhatia/seshy/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -87,6 +88,16 @@ func prependDefaults(defaults, candidates []string) []string {
 		}
 	}
 	return result
+}
+
+// warnReusedBranches surfaces git's DWIM: a worktree that landed on a branch
+// which already existed did not get the fresh branch the caller asked for.
+func warnReusedBranches(repos []session.RepoInfo) {
+	for _, repo := range repos {
+		if repo.Reused {
+			ui.Diagnostic(os.Stderr, "warning", fmt.Sprintf("reusing branch '%s'", repo.Branch))
+		}
+	}
 }
 
 // sessionNames extracts the names from a session list.

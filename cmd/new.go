@@ -87,6 +87,8 @@ var newCmd = &cobra.Command{
 			return fmt.Errorf("failed to create session: %w", err)
 		}
 
+		warnReusedBranches(repoInfos)
+
 		sessionPath, _ := session.GetPath(name)
 		data := session.BuildTemplateData(name, sessionPath, repoInfos)
 

@@ -5,23 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/roshbhatia/go-utils/git"
 )
 
-func gitExec(repoPath string, args ...string) (string, error) {
-	return git.Output(repoPath, args...)
-}
-
-func IsGitRepo(path string) bool { return git.IsRepo(path) }
-
 func GetRepoBasename(path string) string {
 	return filepath.Base(path)
-}
-
-func GetCurrentBranch(path string) (string, error) {
-	return git.Branch(path)
 }
 
 // disambiguatedName generates a unique worktree directory name using bare basename.
@@ -49,23 +38,19 @@ func disambiguatedName(repoPath, sessionPath string) string {
 	}
 }
 
-// CreateWorktree creates a git worktree for the given repo in the session directory.
-// branchName is a pre-rendered branch name (from template or --branch flag).
-func CreateWorktree(repoPath, sessionPath, branchName string) (string, error) {
-	worktreeName := disambiguatedName(repoPath, sessionPath)
-	worktreePath := filepath.Join(sessionPath, worktreeName)
-
-	// Primary strategy: create a new branch from HEAD
-	_, err := gitExec(repoPath, "worktree", "add", worktreePath, "-b", branchName, "HEAD")
+// CreateWorktree creates a git worktree for the given repo in the session
+// directory. branchName is a pre-rendered branch name (from template or
+// --branch flag). The branch starts from HEAD, and an unborn repository is an
+// error rather than an orphan worktree. When the branch already exists git
+// checks it out instead of creating it, and reused reports that so the caller
+// can surface the DWIM.
+func CreateWorktree(repoPath, sessionPath, branchName string) (worktreePath string, reused bool, err error) {
+	worktreePath = filepath.Join(sessionPath, disambiguatedName(repoPath, sessionPath))
+	reused, err = git.WorktreeAdd(repoPath, worktreePath, git.WorktreeAddOptions{Branch: branchName, Start: "HEAD", Reuse: true})
 	if err != nil {
-		// Fallback: branch already exists, reuse it
-		_, err2 := gitExec(repoPath, "worktree", "add", worktreePath, branchName)
-		if err2 != nil {
-			return "", fmt.Errorf("failed to create worktree (primary: %w) (fallback: %w)", err, err2)
-		}
+		return "", false, err
 	}
-
-	return worktreePath, nil
+	return worktreePath, reused, nil
 }
 
 // CreateSymlink creates a symlink for non-git directories.
@@ -97,15 +82,15 @@ func CreateSymlink(target, sessionPath string) (string, error) {
 
 // removeWorktree unregisters a worktree from its main repo.
 //
-// force adds the second --force that git demands before it will remove a
-// locked worktree. Without it, a single locked worktree leaves both the
-// registration and the branch behind.
+// One --force discards local changes. force adds the second --force that git
+// demands before it will remove a locked worktree; without it a single locked
+// worktree leaves both the registration and the branch behind.
 func removeWorktree(mainRepoPath, worktreePath string, force bool) error {
-	args := []string{"worktree", "remove", worktreePath, "--force"}
+	level := 1
 	if force {
-		args = append(args, "--force")
+		level = 2
 	}
-	_, removeErr := gitExec(mainRepoPath, args...)
+	removeErr := git.WorktreeRemove(mainRepoPath, worktreePath, level)
 	if removeErr == nil {
 		return nil
 	}
@@ -113,7 +98,7 @@ func removeWorktree(mainRepoPath, worktreePath string, force bool) error {
 	// prune clears registrations whose directory is already gone, which is the
 	// common reason remove fails. It exits 0 even when it clears nothing, so
 	// confirm the registration actually went away rather than trusting it.
-	_, _ = gitExec(mainRepoPath, "worktree", "prune")
+	_ = git.WorktreePrune(mainRepoPath)
 	if worktreeRegistered(mainRepoPath, worktreePath) {
 		return removeErr
 	}
@@ -122,14 +107,13 @@ func removeWorktree(mainRepoPath, worktreePath string, force bool) error {
 
 // worktreeRegistered reports whether mainRepo still lists worktreePath.
 func worktreeRegistered(mainRepoPath, worktreePath string) bool {
-	out, err := gitExec(mainRepoPath, "worktree", "list", "--porcelain")
+	trees, err := git.Worktrees(mainRepoPath)
 	if err != nil {
 		return false
 	}
 	target := realPath(worktreePath)
-	for _, line := range strings.Split(out, "\n") {
-		listed, ok := strings.CutPrefix(line, "worktree ")
-		if ok && realPath(listed) == target {
+	for _, tree := range trees {
+		if realPath(tree.Path) == target {
 			return true
 		}
 	}
@@ -143,6 +127,43 @@ func realPath(path string) string {
 		return resolved
 	}
 	return filepath.Clean(path)
+}
+
+// errStandaloneClone marks a session entry that is a repository of its own
+// rather than a worktree registered elsewhere. git worktree remove would
+// refuse it, so the caller deletes the directory instead.
+var errStandaloneClone = errors.New("entry is a standalone clone")
+
+// teardownWorktree unregisters the worktree at entryPath from its main repo
+// and deletes the branch it was checked out on. force is passed through to the
+// removal so locked worktrees can be torn down.
+func teardownWorktree(entryPath string, force bool) error {
+	mainRepoPath, err := git.MainWorktree(entryPath)
+	if err != nil {
+		return fmt.Errorf("could not locate main repo: %w", err)
+	}
+	if filepath.Clean(mainRepoPath) == filepath.Clean(entryPath) {
+		return errStandaloneClone
+	}
+
+	branchName, _ := git.Branch(entryPath)
+
+	if err := removeWorktree(mainRepoPath, entryPath, force); err != nil {
+		return fmt.Errorf("failed to remove worktree: %w", err)
+	}
+
+	if branchName == "" || branchName == "HEAD" {
+		return nil
+	}
+	// The main worktree may sit on the same branch; git refuses to delete a
+	// checked-out branch and the user did not ask us to move it.
+	if mainBranch, _ := git.Branch(mainRepoPath); mainBranch == branchName {
+		return nil
+	}
+	if err := git.Run(mainRepoPath, "branch", "-D", branchName); err != nil {
+		return fmt.Errorf("failed to delete branch %s: %w", branchName, err)
+	}
+	return nil
 }
 
 // CleanupWorktrees removes all git worktrees in a session directory and deletes their branches.
@@ -162,43 +183,13 @@ func CleanupWorktrees(sessionPath string, force bool) error {
 		}
 
 		entryPath := filepath.Join(sessionPath, entry.Name())
-
-		_, err := gitExec(entryPath, "rev-parse", "--is-inside-work-tree")
-		if err != nil {
+		if !git.IsRepo(entryPath) {
 			continue
 		}
 
-		branchName, _ := gitExec(entryPath, "rev-parse", "--abbrev-ref", "HEAD")
-
-		gitCommonDir, err := gitExec(entryPath, "rev-parse", "--git-common-dir")
-		if err != nil {
-			errs = append(errs, fmt.Errorf("could not locate main repo for %s: %w", entry.Name(), err))
-			continue
-		}
-
-		if !filepath.IsAbs(gitCommonDir) {
-			gitCommonDir = filepath.Join(entryPath, gitCommonDir)
-		}
-		mainRepoPath := filepath.Dir(gitCommonDir)
-
-		// standalone clone: the entry IS the main repo — skip rather than
-		// trying to remove the main working tree via git worktree remove.
-		if filepath.Clean(mainRepoPath) == filepath.Clean(entryPath) {
-			continue
-		}
-
-		if err := removeWorktree(mainRepoPath, entryPath, force); err != nil {
-			errs = append(errs, fmt.Errorf("failed to remove worktree %s: %w", entry.Name(), err))
-			continue
-		}
-
-		if branchName != "" && branchName != "HEAD" {
-			mainBranch, _ := gitExec(mainRepoPath, "rev-parse", "--abbrev-ref", "HEAD")
-			if mainBranch != branchName {
-				if _, err := gitExec(mainRepoPath, "branch", "-D", branchName); err != nil {
-					errs = append(errs, fmt.Errorf("failed to delete branch %s: %w", branchName, err))
-				}
-			}
+		// A standalone clone is removed with the session directory itself.
+		if err := teardownWorktree(entryPath, force); err != nil && !errors.Is(err, errStandaloneClone) {
+			errs = append(errs, fmt.Errorf("%s: %w", entry.Name(), err))
 		}
 	}
 
@@ -224,52 +215,15 @@ func RemoveRepoEntry(sessionPath, repoName string, force bool) error {
 		return fmt.Errorf("%q is not a directory or symlink", repoName)
 	}
 
-	branchName, _ := gitExec(entryPath, "rev-parse", "--abbrev-ref", "HEAD")
-	gitCommonDir, err := gitExec(entryPath, "rev-parse", "--git-common-dir")
-	if err != nil {
+	if !git.IsRepo(entryPath) {
 		return os.RemoveAll(entryPath)
 	}
 
-	if !filepath.IsAbs(gitCommonDir) {
-		gitCommonDir = filepath.Join(entryPath, gitCommonDir)
-	}
-	mainRepoPath := filepath.Dir(gitCommonDir)
-
-	// standalone clone: the entry IS the main repo, not a registered worktree —
-	// git worktree remove would fail, so just delete the directory.
-	if filepath.Clean(mainRepoPath) == filepath.Clean(entryPath) {
+	err = teardownWorktree(entryPath, force)
+	if errors.Is(err, errStandaloneClone) {
 		return os.RemoveAll(entryPath)
 	}
-
-	if err := removeWorktree(mainRepoPath, entryPath, force); err != nil {
-		return fmt.Errorf("failed to remove worktree: %w", err)
-	}
-
-	if branchName != "" && branchName != "HEAD" {
-		mainBranch, _ := gitExec(mainRepoPath, "rev-parse", "--abbrev-ref", "HEAD")
-		if mainBranch != branchName {
-			if _, err := gitExec(mainRepoPath, "branch", "-D", branchName); err != nil {
-				return fmt.Errorf("failed to delete branch %s: %w", branchName, err)
-			}
-		}
-	}
-
-	return nil
-}
-
-// GetWorktreeMainRepo finds the main repository for a worktree.
-// --git-common-dir can return a relative path (e.g. ".git") for standalone
-// clones, so we resolve it relative to the worktree path before computing the
-// parent directory.
-func GetWorktreeMainRepo(worktreePath string) (string, error) {
-	gitCommonDir, err := gitExec(worktreePath, "rev-parse", "--git-common-dir")
-	if err != nil {
-		return "", err
-	}
-	if !filepath.IsAbs(gitCommonDir) {
-		gitCommonDir = filepath.Join(worktreePath, gitCommonDir)
-	}
-	return filepath.Dir(gitCommonDir), nil
+	return err
 }
 
 // ListRepoSources returns the resolved real paths for all repo sources in a session.
@@ -293,11 +247,7 @@ func ListRepoSources(sessionPath string) ([]string, error) {
 			if err != nil {
 				continue
 			}
-			resolved, err := filepath.EvalSymlinks(target)
-			if err != nil {
-				resolved = target
-			}
-			sources = append(sources, resolved)
+			sources = append(sources, realPath(target))
 			continue
 		}
 
@@ -305,20 +255,11 @@ func ListRepoSources(sessionPath string) ([]string, error) {
 			continue
 		}
 
-		gitCommonDir, err := gitExec(entryPath, "rev-parse", "--git-common-dir")
+		mainRepoPath, err := git.MainWorktree(entryPath)
 		if err != nil {
 			continue
 		}
-
-		if !filepath.IsAbs(gitCommonDir) {
-			gitCommonDir = filepath.Join(entryPath, gitCommonDir)
-		}
-		mainRepoPath := filepath.Dir(gitCommonDir)
-		resolved, err := filepath.EvalSymlinks(mainRepoPath)
-		if err != nil {
-			resolved = mainRepoPath
-		}
-		sources = append(sources, resolved)
+		sources = append(sources, realPath(mainRepoPath))
 	}
 
 	return sources, nil

@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/roshbhatia/go-utils/git"
 )
 
 // ---------------------------------------------------------------------------
@@ -106,69 +108,6 @@ func TestGetRepoBasename(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// IsGitRepo
-// ---------------------------------------------------------------------------
-
-func TestIsGitRepo(t *testing.T) {
-	tmp := t.TempDir()
-
-	t.Run("git repo", func(t *testing.T) {
-		dir := filepath.Join(tmp, "repo")
-		setupTestGitRepo(t, dir)
-		if !IsGitRepo(dir) {
-			t.Error("expected true for git repo")
-		}
-	})
-
-	t.Run("plain dir", func(t *testing.T) {
-		dir := filepath.Join(tmp, "plain")
-		os.MkdirAll(dir, 0755)
-		if IsGitRepo(dir) {
-			t.Error("expected false for plain dir")
-		}
-	})
-
-	t.Run("nonexistent path", func(t *testing.T) {
-		if IsGitRepo(filepath.Join(tmp, "does-not-exist")) {
-			t.Error("expected false for nonexistent path")
-		}
-	})
-}
-
-// ---------------------------------------------------------------------------
-// gitExec
-// ---------------------------------------------------------------------------
-
-func TestGitExecErrorIncludesStderr(t *testing.T) {
-	tmp := t.TempDir()
-	// Run a git command that will fail with an informative error
-	_, err := gitExec(tmp, "rev-parse", "--git-dir")
-	if err == nil {
-		t.Fatal("expected error for non-git directory")
-	}
-	errStr := err.Error()
-	if !strings.Contains(errStr, "git rev-parse failed in") {
-		t.Errorf("expected error to contain 'git rev-parse failed in', got: %s", errStr)
-	}
-	// Should contain some git stderr content (e.g., "fatal: not a git repository")
-	if !strings.Contains(strings.ToLower(errStr), "fatal") && !strings.Contains(strings.ToLower(errStr), "not a git") {
-		t.Logf("warning: error may not contain git stderr content: %s", errStr)
-	}
-}
-
-func TestGitExecSuccess(t *testing.T) {
-	tmp := t.TempDir()
-	setupTestGitRepo(t, tmp)
-	out, err := gitExec(tmp, "rev-parse", "--git-dir")
-	if err != nil {
-		t.Fatalf("gitExec: %v", err)
-	}
-	if out == "" {
-		t.Error("expected non-empty output from rev-parse --git-dir")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // CreateSymlink
 // ---------------------------------------------------------------------------
 
@@ -252,7 +191,7 @@ func TestCreateWorktree(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sessions", "my-session")
 	os.MkdirAll(sessionDir, 0755)
 
-	worktreePath, err := CreateWorktree(repoDir, sessionDir, "sy/my-session/testrepo")
+	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "sy/my-session/testrepo")
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -260,7 +199,7 @@ func TestCreateWorktree(t *testing.T) {
 	if _, err := os.Stat(worktreePath); os.IsNotExist(err) {
 		t.Error("worktree directory was not created")
 	}
-	if !IsGitRepo(worktreePath) {
+	if !git.IsRepo(worktreePath) {
 		t.Error("worktree is not a git repo")
 	}
 	if filepath.Base(worktreePath) != "testrepo" {
@@ -275,7 +214,7 @@ func TestCreateWorktreeNonGitRepo(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sess")
 	os.MkdirAll(sessionDir, 0755)
 
-	_, err := CreateWorktree(plain, sessionDir, "sy/sess/plain")
+	_, _, err := CreateWorktree(plain, sessionDir, "sy/sess/plain")
 	if err == nil {
 		t.Error("expected error when source is not a git repo")
 	}
@@ -291,13 +230,13 @@ func TestCreateWorktreeOnSessionBranch(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sessions", "feat")
 	os.MkdirAll(sessionDir, 0755)
 
-	worktreePath, err := CreateWorktree(repoDir, sessionDir, "sy/feat/testrepo")
+	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "sy/feat/testrepo")
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
 
 	// Verify the worktree is on a sy/ prefixed branch, not detached HEAD
-	branch, err := gitExec(worktreePath, "rev-parse", "--abbrev-ref", "HEAD")
+	branch, err := git.Output(worktreePath, "rev-parse", "--abbrev-ref", "HEAD")
 	if err != nil {
 		t.Fatalf("rev-parse --abbrev-ref HEAD: %v", err)
 	}
@@ -317,7 +256,7 @@ func TestCreateWorktreeDoesNotClobberMain(t *testing.T) {
 	setupTestGitRepo(t, repoDir)
 
 	// Get original main branch ref
-	originalRef, err := gitExec(repoDir, "rev-parse", "HEAD")
+	originalRef, err := git.Output(repoDir, "rev-parse", "HEAD")
 	if err != nil {
 		t.Fatalf("rev-parse HEAD: %v", err)
 	}
@@ -325,13 +264,13 @@ func TestCreateWorktreeDoesNotClobberMain(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sessions", "test")
 	os.MkdirAll(sessionDir, 0755)
 
-	_, err = CreateWorktree(repoDir, sessionDir, "test")
+	_, _, err = CreateWorktree(repoDir, sessionDir, "test")
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
 
 	// Verify main ref hasn't changed
-	afterRef, err := gitExec(repoDir, "rev-parse", "HEAD")
+	afterRef, err := git.Output(repoDir, "rev-parse", "HEAD")
 	if err != nil {
 		t.Fatalf("rev-parse HEAD after: %v", err)
 	}
@@ -353,20 +292,20 @@ func TestCreateWorktreeSucceedsWhenBranchCheckedOutElsewhere(t *testing.T) {
 	os.MkdirAll(sessionDir2, 0755)
 
 	// Create first worktree — its branch is checked out
-	wt1, err := CreateWorktree(repoDir, sessionDir1, "sess1")
+	wt1, _, err := CreateWorktree(repoDir, sessionDir1, "sess1")
 	if err != nil {
 		t.Fatalf("first CreateWorktree: %v", err)
 	}
-	if !IsGitRepo(wt1) {
+	if !git.IsRepo(wt1) {
 		t.Fatal("first worktree is not a git repo")
 	}
 
 	// Create second worktree — should succeed despite first having source branch checked out
-	wt2, err := CreateWorktree(repoDir, sessionDir2, "sess2")
+	wt2, _, err := CreateWorktree(repoDir, sessionDir2, "sess2")
 	if err != nil {
 		t.Fatalf("second CreateWorktree: %v (source branch already checked out in %s)", err, wt1)
 	}
-	if !IsGitRepo(wt2) {
+	if !git.IsRepo(wt2) {
 		t.Fatal("second worktree is not a git repo")
 	}
 }
@@ -432,7 +371,7 @@ func TestCleanupWorktrees(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "session")
 	os.MkdirAll(sessionDir, 0755)
 
-	worktreePath, err := CreateWorktree(repoDir, sessionDir, "test")
+	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "test")
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -469,43 +408,6 @@ func TestCleanupWorktreesNonexistentDir(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// GetWorktreeMainRepo
-// ---------------------------------------------------------------------------
-
-func TestGetWorktreeMainRepo(t *testing.T) {
-	isolatedRoot(t)
-	tmp := t.TempDir()
-
-	repoDir := filepath.Join(tmp, "testrepo")
-	setupTestGitRepo(t, repoDir)
-
-	sessionDir := filepath.Join(tmp, "session")
-	os.MkdirAll(sessionDir, 0755)
-
-	worktreePath, err := CreateWorktree(repoDir, sessionDir, "test")
-	if err != nil {
-		t.Fatalf("CreateWorktree: %v", err)
-	}
-
-	mainRepo, err := GetWorktreeMainRepo(worktreePath)
-	if err != nil {
-		t.Fatalf("GetWorktreeMainRepo: %v", err)
-	}
-	// The resolved main repo should point somewhere inside or equal to repoDir
-	if mainRepo == "" {
-		t.Error("expected non-empty main repo path")
-	}
-}
-
-func TestGetWorktreeMainRepoNonGit(t *testing.T) {
-	tmp := t.TempDir()
-	_, err := GetWorktreeMainRepo(tmp)
-	if err == nil {
-		t.Error("expected error for non-git directory")
-	}
-}
-
-// ---------------------------------------------------------------------------
 // ListRepoSources
 // ---------------------------------------------------------------------------
 
@@ -522,7 +424,7 @@ func TestListRepoSources(t *testing.T) {
 	os.MkdirAll(sessionDir, 0755)
 
 	// Create a worktree and a symlink
-	_, err := CreateWorktree(repoDir, sessionDir, "test")
+	_, _, err := CreateWorktree(repoDir, sessionDir, "test")
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -1052,7 +954,7 @@ func TestDeleteCleansBranches(t *testing.T) {
 	}
 
 	// Verify branch exists before delete
-	branches, _ := gitExec(repoDir, "branch", "--list", "sy/branch-cleanup/*")
+	branches, _ := git.Output(repoDir, "branch", "--list", "sy/branch-cleanup/*")
 	if branches == "" {
 		t.Fatal("expected sy/branch-cleanup/* branch to exist before delete")
 	}
@@ -1062,7 +964,7 @@ func TestDeleteCleansBranches(t *testing.T) {
 	}
 
 	// Verify branch is cleaned up
-	branches, _ = gitExec(repoDir, "branch", "--list", "sy/branch-cleanup/*")
+	branches, _ = git.Output(repoDir, "branch", "--list", "sy/branch-cleanup/*")
 	if strings.TrimSpace(branches) != "" {
 		t.Errorf("expected branch to be deleted after session delete, still found: %q", branches)
 	}
@@ -1095,8 +997,44 @@ func TestCreateRollsBackOnFailure(t *testing.T) {
 	}
 
 	// Branch from the good repo should also be cleaned up
-	branches, _ := gitExec(goodRepo, "branch", "--list", "sy/rollback-test/*")
+	branches, _ := git.Output(goodRepo, "branch", "--list", "sy/rollback-test/*")
 	if strings.TrimSpace(branches) != "" {
 		t.Errorf("expected branch to be rolled back, still found: %q", branches)
+	}
+}
+
+// TestCreateWorktreeReusesExistingBranch pins git's DWIM: a branch that already
+// exists is checked out rather than recreated, and the caller learns about it.
+func TestCreateWorktreeReusesExistingBranch(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+
+	repoDir := filepath.Join(tmp, "testrepo")
+	setupTestGitRepo(t, repoDir)
+	if err := git.Run(repoDir, "branch", "sy/reuse/testrepo"); err != nil {
+		t.Fatalf("branch: %v", err)
+	}
+
+	sessionDir := filepath.Join(tmp, "sessions", "reuse")
+	os.MkdirAll(sessionDir, 0755)
+
+	worktreePath, reused, err := CreateWorktree(repoDir, sessionDir, "sy/reuse/testrepo")
+	if err != nil {
+		t.Fatalf("CreateWorktree: %v", err)
+	}
+	if !reused {
+		t.Error("expected reused to be true for a pre-existing branch")
+	}
+	branch, _ := git.Branch(worktreePath)
+	if branch != "sy/reuse/testrepo" {
+		t.Errorf("branch = %q, want sy/reuse/testrepo", branch)
+	}
+
+	_, reused, err = CreateWorktree(repoDir, filepath.Join(tmp, "sessions", "fresh"), "sy/fresh/testrepo")
+	if err != nil {
+		t.Fatalf("CreateWorktree fresh: %v", err)
+	}
+	if reused {
+		t.Error("expected reused to be false for a new branch")
 	}
 }

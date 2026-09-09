@@ -109,6 +109,8 @@ var addCmd = &cobra.Command{
 			return fmt.Errorf("failed to add repositories: %w", err)
 		}
 
+		warnReusedBranches(newRepos)
+
 		// Build template data with ALL repos (existing + new)
 		allRepos := session.GetSessionRepoInfos(sessionPath)
 		data := session.BuildTemplateData(name, sessionPath, allRepos)

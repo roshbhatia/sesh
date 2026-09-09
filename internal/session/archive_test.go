@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/roshbhatia/go-utils/git"
 	"github.com/roshbhatia/seshy/internal/config"
 )
 
@@ -65,7 +66,7 @@ func TestArchiveKeepsWorktreeUsable(t *testing.T) {
 	}
 
 	worktree := filepath.Join(archivePath, "repo")
-	branch, err := GetCurrentBranch(worktree)
+	branch, err := git.Branch(worktree)
 	if err != nil {
 		t.Fatalf("archived worktree is not a working git checkout: %v", err)
 	}
@@ -163,7 +164,7 @@ func TestUnarchiveRestoresSession(t *testing.T) {
 	if ArchivedExists("round-trip") {
 		t.Error("session still present in archive after unarchive")
 	}
-	branch, err := GetCurrentBranch(filepath.Join(sessionPath, "repo"))
+	branch, err := git.Branch(filepath.Join(sessionPath, "repo"))
 	if err != nil {
 		t.Fatalf("restored worktree is not a working git checkout: %v", err)
 	}

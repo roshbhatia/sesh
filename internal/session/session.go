@@ -10,6 +10,7 @@ import (
 	"text/template"
 	"time"
 
+	"github.com/roshbhatia/go-utils/git"
 	"github.com/roshbhatia/seshy/internal/config"
 	"github.com/roshbhatia/seshy/internal/tmpl"
 )
@@ -31,6 +32,7 @@ type RepoInfo struct {
 	Path       string // absolute worktree/symlink path
 	SourcePath string // absolute original repo path
 	Branch     string // rendered branch name (empty for non-git)
+	Reused     bool   // the branch existed before this add and git checked it out
 }
 
 // AddResult holds the outcome of adding multiple repos.
@@ -134,7 +136,7 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 	}
 
 	if opts.GitEnabled {
-		if _, err := gitExec(sessionPath, "init"); err != nil {
+		if err := git.Run(sessionPath, "init"); err != nil {
 			_ = os.RemoveAll(sessionPath)
 			return nil, fmt.Errorf("failed to init session git repo: %w", err)
 		}
@@ -151,9 +153,9 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 	cleanup := func() {
 		for i := len(createdList) - 1; i >= 0; i-- {
 			c := createdList[i]
-			if IsGitRepo(c.repoPath) && c.branchName != "" {
+			if git.IsRepo(c.repoPath) && c.branchName != "" {
 				_ = removeWorktree(c.repoPath, c.worktreePath, true)
-				_, _ = gitExec(c.repoPath, "branch", "-D", c.branchName)
+				_ = git.Run(c.repoPath, "branch", "-D", c.branchName)
 			}
 		}
 		_ = os.RemoveAll(sessionPath)
@@ -165,14 +167,14 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 			repoPath = abs
 		}
 
-		if IsGitRepo(repoPath) {
+		if git.IsRepo(repoPath) {
 			branch, err := branchForRepo(opts.BranchFormat, opts.BranchOverride, name, repoPath)
 			if err != nil {
 				cleanup()
 				return nil, fmt.Errorf("branch name for %s: %w", repoPath, err)
 			}
 
-			wtPath, err := CreateWorktree(repoPath, sessionPath, branch)
+			wtPath, reused, err := CreateWorktree(repoPath, sessionPath, branch)
 			if err != nil {
 				cleanup()
 				return nil, fmt.Errorf("failed to create worktree for %s: %w", repoPath, err)
@@ -183,6 +185,7 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 				Path:       wtPath,
 				SourcePath: repoPath,
 				Branch:     branch,
+				Reused:     reused,
 			})
 		} else {
 			linkPath, err := CreateSymlink(repoPath, sessionPath)
@@ -300,13 +303,13 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 			continue
 		}
 
-		if IsGitRepo(repoPath) {
+		if git.IsRepo(repoPath) {
 			branch, err := branchForRepo(opts.BranchFormat, opts.BranchOverride, name, repoPath)
 			if err != nil {
 				result.Errors[repoPath] = err
 				continue
 			}
-			wtPath, err := CreateWorktree(repoPath, sessionPath, branch)
+			wtPath, reused, err := CreateWorktree(repoPath, sessionPath, branch)
 			if err != nil {
 				result.Errors[repoPath] = err
 				continue
@@ -316,6 +319,7 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 				Path:       wtPath,
 				SourcePath: repoPath,
 				Branch:     branch,
+				Reused:     reused,
 			})
 		} else {
 			linkPath, err := CreateSymlink(repoPath, sessionPath)
@@ -383,11 +387,11 @@ func GetSessionRepoInfos(sessionPath string) []RepoInfo {
 			}
 			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: resolved})
 		} else if info.IsDir() {
-			mainRepo, err := GetWorktreeMainRepo(entryPath)
+			mainRepo, err := git.MainWorktree(entryPath)
 			if err != nil {
 				continue
 			}
-			branch, _ := GetCurrentBranch(entryPath)
+			branch, _ := git.Branch(entryPath)
 			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: mainRepo, Branch: branch})
 		}
 	}
@@ -431,15 +435,14 @@ func repairWorktreeRegistrations(sessionPath string) {
 			continue
 		}
 		entryPath := filepath.Join(sessionPath, e.Name())
-		mainRepo, err := GetWorktreeMainRepo(entryPath)
+		mainRepo, err := git.MainWorktree(entryPath)
 		if err != nil {
 			continue
 		}
 		mainToWorktrees[mainRepo] = append(mainToWorktrees[mainRepo], entryPath)
 	}
 	for mainRepo, worktrees := range mainToWorktrees {
-		args := append([]string{"worktree", "repair"}, worktrees...)
-		_, _ = gitExec(mainRepo, args...)
+		_ = git.WorktreeRepair(mainRepo, worktrees...)
 	}
 }
 
