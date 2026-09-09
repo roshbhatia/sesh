@@ -1,9 +1,13 @@
 package session
 
 import (
+	"errors"
+	"fmt"
 	"os/user"
 	"strings"
 	"testing"
+
+	"github.com/roshbhatia/go-utils/git"
 )
 
 func TestRenderBranchNameDefault(t *testing.T) {
@@ -51,42 +55,32 @@ func TestRenderBranchNameRendersInvalidName(t *testing.T) {
 	}
 }
 
-func TestValidateBranchNameValid(t *testing.T) {
+func TestCheckBranchNameValid(t *testing.T) {
 	for _, name := range []string{"main", "feature/x", "sy/sess/repo", "a-b_c.d"} {
-		if err := ValidateBranchName(name); err != nil {
+		if err := CheckBranchName(name); err != nil {
 			t.Errorf("expected valid for %q, got error: %v", name, err)
 		}
 	}
 }
 
-func TestValidateBranchNameEmpty(t *testing.T) {
-	if err := ValidateBranchName(""); err == nil {
-		t.Error("expected error for empty name")
-	}
-}
-
-func TestValidateBranchNameSpaces(t *testing.T) {
-	if err := ValidateBranchName("my branch"); err == nil {
-		t.Error("expected error for spaces")
-	}
-}
-
-func TestValidateBranchNameDoubleDot(t *testing.T) {
-	if err := ValidateBranchName("a..b"); err == nil {
-		t.Error("expected error for ..")
-	}
-}
-
-func TestValidateBranchNameSpecialChars(t *testing.T) {
-	for _, c := range []string{"~", "^", ":", "\\", "?", "*", "["} {
-		if err := ValidateBranchName("a" + c + "b"); err == nil {
-			t.Errorf("expected error for char %q", c)
+// TestCheckBranchNameRejectsWhatGitRejects covers the rules the hand-rolled
+// validator used to carry, plus the ones it missed (HEAD, a leading dash).
+func TestCheckBranchNameRejectsWhatGitRejects(t *testing.T) {
+	for _, name := range []string{"", "my branch", "a..b", "a~b", "a^b", "a:b", "a?b", "a*b", "a[b", "a\\b", "branch.lock", "trailing.", "HEAD", "-x", "@{1}"} {
+		err := CheckBranchName(name)
+		if err == nil {
+			t.Errorf("expected %q to be rejected", name)
+			continue
 		}
-	}
-}
-
-func TestValidateBranchNameLockSuffix(t *testing.T) {
-	if err := ValidateBranchName("branch.lock"); err == nil {
-		t.Error("expected error for .lock suffix")
+		var bad *BranchNameError
+		if !errors.As(err, &bad) {
+			t.Errorf("%q: expected *BranchNameError, got %T", name, err)
+		}
+		if want := fmt.Sprintf("'%s' is not a valid branch name", name); err.Error() != want {
+			t.Errorf("%q: message = %q, want %q", name, err.Error(), want)
+		}
+		if git.ExitStatus(err) != 128 {
+			t.Errorf("%q: exit status = %d, want 128", name, git.ExitStatus(err))
+		}
 	}
 }

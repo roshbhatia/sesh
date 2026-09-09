@@ -99,7 +99,7 @@ func Exists(name string) bool {
 // branchForRepo computes the branch name for a repo.
 func branchForRepo(branchFormat, branchOverride, sessionName, repoPath string) (string, error) {
 	if branchOverride != "" {
-		if err := ValidateBranchName(branchOverride); err != nil {
+		if err := CheckBranchName(branchOverride); err != nil {
 			return "", err
 		}
 		return branchOverride, nil
