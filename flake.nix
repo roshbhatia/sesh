@@ -33,7 +33,7 @@
             pname = "seshy";
             inherit version;
             src = ./.;
-            vendorHash = "sha256-ApJ/g1iqdL8fktGGvB49QDH7uiDqeDywBfrLRzNg5rQ=";
+            vendorHash = "sha256-HS1BE+Gu3m8J0V5iIyfOoagXgZBVPX3t/FWgCfosTdY=";
             subPackages = [ "./cmd/sy" ];
             nativeBuildInputs = [ pkgs.installShellFiles ];
             nativeCheckInputs = [
