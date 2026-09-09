@@ -90,6 +90,8 @@ _sy_complete() {
       'add:--branch='*) continue ;;
       'add:-b') consume_value=1; continue ;;
       'add:-b='*) continue ;;
+      'list:--format') consume_value=1; continue ;;
+      'list:--format='*) continue ;;
       'new:--branch') consume_value=1; continue ;;
       'new:--branch='*) continue ;;
       'new:-b') consume_value=1; continue ;;
@@ -184,7 +186,7 @@ _sy_complete() {
       ;;
     'list')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' '--archived' '--json' '--names' '--paths'
+        printf '%s\n' '--archived' '--format' '--json' '--names' '--paths'
       )
       ;;
     'new')

@@ -57,7 +57,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Default: show list (same as `sy list`)
-		return printSessionList(sessions, "", noSessionsMessage())
+		return printSessionList(sessions, formatTable, noSessionsMessage(), false)
 	},
 }
 
@@ -67,17 +67,18 @@ func noSessionsMessage() string {
 }
 
 // printSessionList renders sessions in the requested format. empty is the
-// message shown when the list has no entries and the format is the human table.
-func printSessionList(sessions []session.Session, format, empty string) error {
+// message shown when the list has no entries and the format is the human
+// table. archived is reported in the JSON entries.
+func printSessionList(sessions []session.Session, format, empty string, archived bool) error {
 	switch format {
-	case "json":
-		return printSessionsJSON(sessions)
-	case "names":
+	case formatJSON:
+		return printSessionsJSON(sessions, archived)
+	case formatNames:
 		for _, s := range sessions {
 			fmt.Println(s.Name)
 		}
 		return nil
-	case "paths":
+	case formatPaths:
 		for _, s := range sessions {
 			fmt.Println(s.Path)
 		}

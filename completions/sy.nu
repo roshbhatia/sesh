@@ -69,6 +69,7 @@ export extern "sy init" [
 
 export extern "sy list" [
   --archived # List archived sessions instead of active ones
+  --format: string # Output format: table, json, names, paths
   --json # Output JSON
   --names # Output session names only
   --paths # Output session paths only

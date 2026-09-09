@@ -97,6 +97,11 @@ function __sy_completion_context
         continue
       case 'add:-b=*'
         continue
+      case 'list:--format'
+        set consume_value 1
+        continue
+      case 'list:--format=*'
+        continue
       case 'new:--branch' 'new:-b'
         set consume_value 1
         continue
@@ -182,6 +187,7 @@ complete -c sy -n 'test (__sy_completion_context) = "delete"' -l force -s f -d '
 complete -c sy -f -n 'test (__sy_completion_context) = "delete"' -a '(__sy_completion_values_4)'
 complete -c sy -f -n 'test (__sy_completion_context) = "init"' -a '(__sy_completion_values_5)'
 complete -c sy -n 'test (__sy_completion_context) = "list"' -l archived -d 'List archived sessions instead of active ones'
+complete -c sy -n 'test (__sy_completion_context) = "list"' -l format -r -d 'Output format: table, json, names, paths'
 complete -c sy -n 'test (__sy_completion_context) = "list"' -l json -d 'Output JSON'
 complete -c sy -n 'test (__sy_completion_context) = "list"' -l names -d 'Output session names only'
 complete -c sy -n 'test (__sy_completion_context) = "list"' -l paths -d 'Output session paths only'

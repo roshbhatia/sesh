@@ -75,6 +75,10 @@ func runCmd(args ...string) (stdout, stderr string, err error) {
 	forceDelete = false
 	deleteArchived = false
 	listArchived = false
+	listFormat = ""
+	listJSON = false
+	listNames = false
+	listPaths = false
 	newBranch = ""
 	newStdin = false
 	newEmpty = false
@@ -842,7 +846,7 @@ func TestPrintSessionListAlignsColoredHeader(t *testing.T) {
 	origStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	err := printSessionList(sessions, "", "none")
+	err := printSessionList(sessions, formatTable, "none", false)
 	w.Close()
 	os.Stdout = origStdout
 	if err != nil {
@@ -878,7 +882,7 @@ func TestPrintSessionListNoColorWhenStdoutRedirected(t *testing.T) {
 	origStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	err := printSessionList(sessions, "", "none")
+	err := printSessionList(sessions, formatTable, "none", false)
 	w.Close()
 	os.Stdout = origStdout
 	if err != nil {
@@ -1036,7 +1040,7 @@ func TestPrintSessionListPipedBytes(t *testing.T) {
 	origStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	err := printSessionList(sessions, "", "none")
+	err := printSessionList(sessions, formatTable, "none", false)
 	w.Close()
 	os.Stdout = origStdout
 	if err != nil {

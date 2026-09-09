@@ -159,6 +159,7 @@ sy list [flags]
 | Option | Description |
 | --- | --- |
 | `--archived` | List archived sessions instead of active ones |
+| `--format` `<value>` | Output format: table, json, names, paths |
 | `--json` | Output JSON |
 | `--names` | Output session names only |
 | `--paths` | Output session paths only |

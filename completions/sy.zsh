@@ -102,6 +102,8 @@ _sy() {
       'add:--branch='*) continue ;;
       'add:-b') consume_value=1; continue ;;
       'add:-b='*) continue ;;
+      'list:--format') consume_value=1; continue ;;
+      'list:--format='*) continue ;;
       'new:--branch') consume_value=1; continue ;;
       'new:--branch='*) continue ;;
       'new:-b') consume_value=1; continue ;;
@@ -199,6 +201,7 @@ _sy() {
     'list')
       _arguments \
         '--archived[List archived sessions instead of active ones]' \
+        '--format[Output format: table, json, names, paths]:value:' \
         '--json[Output JSON]' \
         '--names[Output session names only]' \
         '--paths[Output session paths only]' \
