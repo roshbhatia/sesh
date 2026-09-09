@@ -12,6 +12,7 @@ import (
 	"github.com/roshbhatia/go-utils/paths"
 	"github.com/roshbhatia/go-utils/terminal"
 	"github.com/roshbhatia/go-utils/ui"
+	"github.com/roshbhatia/seshy/internal/config"
 	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/roshbhatia/seshy/internal/session"
 	"github.com/spf13/cobra"
@@ -159,6 +160,16 @@ func warnReusedBranches(repos []session.RepoInfo) {
 		if repo.Reused {
 			ui.Diagnostic(os.Stderr, "warning", fmt.Sprintf("reusing branch '%s'", repo.Branch))
 		}
+	}
+}
+
+// branchFormatResolver returns a per-repo branch-format resolver over the
+// effective config, so a source repo's git config seshy.branchFormat overrides
+// the session-wide format.
+func branchFormatResolver() func(string) string {
+	return func(repoPath string) string {
+		format, _ := config.ResolveBranchFormat(repoPath)
+		return format
 	}
 }
 

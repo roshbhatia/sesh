@@ -68,8 +68,9 @@ var newCmd = &cobra.Command{
 		}
 
 		opts := session.CreateOpts{
-			BranchFormat:   cfg.BranchFormat,
-			BranchOverride: newBranch,
+			BranchFormat:    cfg.BranchFormat,
+			BranchFormatFor: branchFormatResolver(),
+			BranchOverride:  newBranch,
 		}
 
 		repoInfos, err := session.Create(name, repos, opts)

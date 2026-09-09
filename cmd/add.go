@@ -85,8 +85,9 @@ var addCmd = &cobra.Command{
 		}
 
 		opts := session.CreateOpts{
-			BranchFormat:   cfg.BranchFormat,
-			BranchOverride: addBranch,
+			BranchFormat:    cfg.BranchFormat,
+			BranchFormatFor: branchFormatResolver(),
+			BranchOverride:  addBranch,
 		}
 
 		result, newRepos, err := session.AddRepos(name, repos, opts)

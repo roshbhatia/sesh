@@ -96,6 +96,12 @@ sy completion <bash|zsh|fish|nu>
 
 sy config
 
+Show the effective configuration with the origin of each value.
+
+Origin is one of env, file, or default, in that precedence. branchFormat is
+additionally overridable per source repo through git config seshy.branchFormat,
+which this global view does not read.
+
 ### `sy config edit`
 
 sy config edit

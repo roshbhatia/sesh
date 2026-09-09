@@ -148,21 +148,32 @@ func NormalizeRepoPath(path string) (string, error) {
 	return abs, nil
 }
 
-// branchForRepo computes the branch name for a repo.
-func branchForRepo(branchFormat, branchOverride, sessionName, repoPath string) (string, error) {
-	if branchOverride != "" {
-		if err := CheckBranchName(branchOverride); err != nil {
+// branchForRepo computes the branch name for a repo. A --branch override wins
+// outright. Otherwise the format is opts.BranchFormatFor(repoPath) when set,
+// which lets a per-repo git config override the session-wide format, and
+// opts.BranchFormat otherwise.
+func branchForRepo(opts CreateOpts, sessionName, repoPath string) (string, error) {
+	if opts.BranchOverride != "" {
+		if err := CheckBranchName(opts.BranchOverride); err != nil {
 			return "", err
 		}
-		return branchOverride, nil
+		return opts.BranchOverride, nil
 	}
-	return RenderBranchName(branchFormat, sessionName, GetRepoBasename(repoPath))
+	format := opts.BranchFormat
+	if opts.BranchFormatFor != nil {
+		format = opts.BranchFormatFor(repoPath)
+	}
+	return RenderBranchName(format, sessionName, GetRepoBasename(repoPath))
 }
 
 // CreateOpts holds options for session creation.
 type CreateOpts struct {
 	BranchFormat   string
 	BranchOverride string
+	// BranchFormatFor resolves the branch-name template for one source repo,
+	// so a per-repo override can differ from BranchFormat. Nil falls back to
+	// BranchFormat.
+	BranchFormatFor func(repoPath string) string
 	// GitEnabled initialises the session directory as a git repository and
 	// maintains a .gitignore that hides repo entries while keeping coordination
 	// artifacts (AGENTS.md, openspec/, .claude/) trackable.
@@ -221,7 +232,7 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 		}
 
 		if git.IsRepo(repoPath) {
-			branch, err := branchForRepo(opts.BranchFormat, opts.BranchOverride, name, repoPath)
+			branch, err := branchForRepo(opts, name, repoPath)
 			if err != nil {
 				cleanup()
 				return nil, err
@@ -361,7 +372,7 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 		}
 
 		if git.IsRepo(repoPath) {
-			branch, err := branchForRepo(opts.BranchFormat, opts.BranchOverride, name, repoPath)
+			branch, err := branchForRepo(opts, name, repoPath)
 			if err != nil {
 				result.Errors[given] = err
 				continue
