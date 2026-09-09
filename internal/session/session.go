@@ -27,14 +27,23 @@ type Session struct {
 	LastModified time.Time
 }
 
+// Repo entry kinds: what a session directory entry is.
+const (
+	KindWorktree = "worktree" // a linked worktree of the source repo
+	KindSymlink  = "symlink"  // a symlink to a non-git directory
+	KindClone    = "clone"    // a repository of its own, registered nowhere else
+)
+
 // RepoInfo describes a repo that was created in a session.
 type RepoInfo struct {
 	Name       string // basename in session dir
 	Path       string // absolute worktree/symlink path
 	SourcePath string // absolute original repo path
 	Branch     string // rendered branch name (empty for non-git)
+	Kind       string // KindWorktree, KindSymlink, or KindClone
 	Reused     bool   // the branch existed before this add and git checked it out
 	Detached   bool   // the worktree is on no branch
+	Locked     bool   // the worktree is locked in its source repo
 }
 
 // AddResult holds the outcome of adding multiple repos.
@@ -139,21 +148,32 @@ func NormalizeRepoPath(path string) (string, error) {
 	return abs, nil
 }
 
-// branchForRepo computes the branch name for a repo.
-func branchForRepo(branchFormat, branchOverride, sessionName, repoPath string) (string, error) {
-	if branchOverride != "" {
-		if err := CheckBranchName(branchOverride); err != nil {
+// branchForRepo computes the branch name for a repo. A --branch override wins
+// outright. Otherwise the format is opts.BranchFormatFor(repoPath) when set,
+// which lets a per-repo git config override the session-wide format, and
+// opts.BranchFormat otherwise.
+func branchForRepo(opts CreateOpts, sessionName, repoPath string) (string, error) {
+	if opts.BranchOverride != "" {
+		if err := CheckBranchName(opts.BranchOverride); err != nil {
 			return "", err
 		}
-		return branchOverride, nil
+		return opts.BranchOverride, nil
 	}
-	return RenderBranchName(branchFormat, sessionName, GetRepoBasename(repoPath))
+	format := opts.BranchFormat
+	if opts.BranchFormatFor != nil {
+		format = opts.BranchFormatFor(repoPath)
+	}
+	return RenderBranchName(format, sessionName, GetRepoBasename(repoPath))
 }
 
 // CreateOpts holds options for session creation.
 type CreateOpts struct {
 	BranchFormat   string
 	BranchOverride string
+	// BranchFormatFor resolves the branch-name template for one source repo,
+	// so a per-repo override can differ from BranchFormat. Nil falls back to
+	// BranchFormat.
+	BranchFormatFor func(repoPath string) string
 	// GitEnabled initialises the session directory as a git repository and
 	// maintains a .gitignore that hides repo entries while keeping coordination
 	// artifacts (AGENTS.md, openspec/, .claude/) trackable.
@@ -212,7 +232,7 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 		}
 
 		if git.IsRepo(repoPath) {
-			branch, err := branchForRepo(opts.BranchFormat, opts.BranchOverride, name, repoPath)
+			branch, err := branchForRepo(opts, name, repoPath)
 			if err != nil {
 				cleanup()
 				return nil, err
@@ -230,6 +250,7 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 				Path:       wtPath,
 				SourcePath: repoPath,
 				Branch:     branch,
+				Kind:       KindWorktree,
 				Reused:     reused,
 			})
 		} else {
@@ -242,6 +263,7 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 				Name:       filepath.Base(linkPath),
 				Path:       linkPath,
 				SourcePath: repoPath,
+				Kind:       KindSymlink,
 			})
 		}
 	}
@@ -350,7 +372,7 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 		}
 
 		if git.IsRepo(repoPath) {
-			branch, err := branchForRepo(opts.BranchFormat, opts.BranchOverride, name, repoPath)
+			branch, err := branchForRepo(opts, name, repoPath)
 			if err != nil {
 				result.Errors[given] = err
 				continue
@@ -366,6 +388,7 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 				Path:       wtPath,
 				SourcePath: repoPath,
 				Branch:     branch,
+				Kind:       KindWorktree,
 				Reused:     reused,
 			})
 		} else {
@@ -378,6 +401,7 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 				Name:       filepath.Base(linkPath),
 				Path:       linkPath,
 				SourcePath: repoPath,
+				Kind:       KindSymlink,
 			})
 		}
 
@@ -432,17 +456,42 @@ func GetSessionRepoInfos(sessionPath string) []RepoInfo {
 			if resolved == "" {
 				resolved = target
 			}
-			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: resolved})
+			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: resolved, Kind: KindSymlink})
 		} else if info.IsDir() {
 			mainRepo, err := git.MainWorktree(entryPath)
 			if err != nil {
 				continue
 			}
 			branch, _ := git.Branch(entryPath)
-			repos = append(repos, RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: mainRepo, Branch: branch, Detached: branch == "HEAD"})
+			repo := RepoInfo{Name: e.Name(), Path: entryPath, SourcePath: mainRepo, Branch: branch, Kind: KindWorktree, Detached: branch == "HEAD"}
+			if filepath.Clean(mainRepo) == filepath.Clean(entryPath) {
+				repo.Kind = KindClone
+			}
+			if repo.Kind == KindWorktree {
+				repo.Locked = worktreeLocked(mainRepo, entryPath)
+				if !repo.Detached && branch != "" {
+					_, repo.Reused, _ = git.ConfigGet(mainRepo, reusedKey(branch))
+				}
+			}
+			repos = append(repos, repo)
 		}
 	}
 	return repos
+}
+
+// worktreeLocked reports whether mainRepoPath lists worktreePath as locked.
+func worktreeLocked(mainRepoPath, worktreePath string) bool {
+	trees, err := git.Worktrees(mainRepoPath)
+	if err != nil {
+		return false
+	}
+	target := realPath(worktreePath)
+	for _, tree := range trees {
+		if realPath(tree.Path) == target {
+			return tree.Locked
+		}
+	}
+	return false
 }
 
 // RenameSession renames a session directory and repairs git worktree registrations.

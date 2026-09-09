@@ -1,0 +1,16 @@
+# provider/v1 manifest: seshy as a roster session source.
+# Vet: cue vet -d '#Manifest' "$PROVIDER_SPEC/provider.cue" schema/narrow.cue share/seshy/providers/seshy.yaml
+version: provider/v1
+kind: source
+name: seshy
+description: Active seshy sessions as roster rows
+command: [sy, provider]
+defaults:
+  timeout: 5s
+actions:
+  provider.validate:
+    description: Report that sy answers provider requests
+  source.list:
+    description: List every active session as a roster.catalog/v1 document
+  source.open:
+    description: Return one session row with its spawn plan filled

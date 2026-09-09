@@ -54,8 +54,16 @@ func ConfigPath() string {
 	return path
 }
 
+// overridePath, when set, selects the config file over $SESHY_CONFIG and the
+// XDG default. The root --config flag writes it before any Load.
+var overridePath string
+
+// SetPath selects the config file for every later Load. An empty path clears
+// the override and restores the environment and XDG resolution.
+func SetPath(path string) { overridePath = path }
+
 func configOptions() sharedconfig.Options {
-	return sharedconfig.Options{Name: "seshy", EnvPrefix: "SESHY"}
+	return sharedconfig.Options{Name: "seshy", EnvPrefix: "SESHY", Path: overridePath}
 }
 
 // Load reads config from disk and merges with defaults.

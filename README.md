@@ -53,6 +53,7 @@ sy [flags]
 
 | Option | Description |
 | --- | --- |
+| `--config` `<value>` | Config file, instead of $SESHY_CONFIG or $XDG_CONFIG_HOME/seshy/config.yaml |
 | `--greedy` `<value>` | Fuzzy-match a session name and print its path |
 
 ### `sy add`
@@ -95,6 +96,12 @@ sy completion <bash|zsh|fish|nu>
 
 sy config
 
+Show the effective configuration with the origin of each value.
+
+Origin is one of env, file, or default, in that precedence. branchFormat is
+additionally overridable per source repo through git config seshy.branchFormat,
+which this global view does not read.
+
 ### `sy config edit`
 
 sy config edit
@@ -128,6 +135,7 @@ sy delete [name] [flags]
 | --- | --- |
 | `--archived` | Delete an archived session instead of an active one |
 | `--force`, `-f` | Skip confirmation and delete even if worktree cleanup fails |
+| `--yes`, `-y` | Skip the confirmation prompt |
 
 ### `sy help`
 
@@ -159,6 +167,7 @@ sy list [flags]
 | Option | Description |
 | --- | --- |
 | `--archived` | List archived sessions instead of active ones |
+| `--format` `<value>` | Output format: table, json, names, paths |
 | `--json` | Output JSON |
 | `--names` | Output session names only |
 | `--paths` | Output session paths only |
@@ -173,9 +182,58 @@ sy new <name> [repos...] [flags]
 | `--empty` | Create the session with no repositories |
 | `--stdin` | Read repo paths from stdin |
 
+### `sy open`
+
+sy open <name> [flags]
+
+Print the session directory, or with --format json the seshy.open/v1 plan a
+launcher runs to enter the session: its cwd, an empty command for the caller's
+default program, and SESHY_SESSION in the environment.
+
+The name is matched exactly, or given as the seshy:<name> id a listing
+printed. A session that no longer exists exits 3.
+
+| Option | Description |
+| --- | --- |
+| `--format` `<value>` | Output format: table, json |
+
 ### `sy path`
 
 sy path <name>
+
+### `sy provider`
+
+sy provider
+
+Answer one provider/v1 request frame read from stdin, as roster invokes it.
+
+The frame's capability selects the answer: provider.validate reports ok,
+source.list returns the roster.catalog/v1 document, and source.open takes
+{"id": "seshy:<name>"} and returns that row with its spawn plan. The result is
+one JSON line on stdout. A capability seshy does not implement, or an id that
+names no session, is an error result, not a non-zero exit; a frame that is
+not a provider/v1 request is a usage error.
+
+The manifest roster discovers is share/seshy/providers/seshy.yaml.
+
+### `sy prune`
+
+sy prune [repo...] [flags]
+
+Reclaim what a removed session left in git.
+
+For each repo, prune worktree registrations whose directories are gone, then
+delete the seshy branches whose session directory no longer exists. Also
+remove symlinks under the sessions root whose targets are gone. With no repo
+arguments, prune visits every source repo of every session. A "-" argument
+reads repo paths from stdin.
+
+Each action prints one line to stderr. --dry-run prints the actions without
+taking them.
+
+| Option | Description |
+| --- | --- |
+| `--dry-run` | Print the actions without taking them |
 
 ### `sy remove`
 
@@ -183,15 +241,33 @@ sy remove <session> <repo> [flags]
 
 | Option | Description |
 | --- | --- |
-| `--force`, `-f` | Skip confirmation prompt |
+| `--force`, `-f` | Skip confirmation prompt and remove even if worktree cleanup fails |
+| `--yes`, `-y` | Skip the confirmation prompt |
 
 ### `sy rename`
 
 sy rename <old-name> <new-name>
 
+### `sy source`
+
+sy source
+
+Serve sessions to roster, the session-source aggregator a launcher reads.
+
+"sy source list" prints the roster.catalog/v1 document directly, one row per
+active session, for inspection. roster itself talks to "sy provider".
+
+### `sy source list`
+
+sy source list
+
 ### `sy status`
 
-sy status [name]
+sy status [name] [flags]
+
+| Option | Description |
+| --- | --- |
+| `--format` `<value>` | Output format: table, json |
 
 ### `sy switch`
 
@@ -216,6 +292,39 @@ Restore an archived session back into the sessions directory.
 Unarchiving does not prompt for confirmation, because nothing is destroyed.
 
 <!-- END GENERATED:commands -->
+
+## Plumbing and porcelain
+
+seshy has two kinds of command. Porcelain is for a person at a terminal;
+plumbing is for another program.
+
+Porcelain reads the terminal, prompts, and prints a table. The bare `sy`
+picker and the `s` and `sz` shell wrappers from `sy init` are porcelain: they
+resolve a name, change the directory, or open a picker.
+
+Plumbing prints one stable document and never prompts. It is versioned, so a
+caller pins the shape it parses:
+
+| Command | Output |
+| --- | --- |
+| `sy list --format json` | `seshy.list/v1`, a bare array; schema `schema/list.v1.schema.json` |
+| `sy open <name> --format json` | `seshy.open/v1`; schema `schema/open.v1.schema.json` |
+| `sy status <name> --format json` | `seshy.status/v1`; schema `schema/status.v1.schema.json` |
+| `sy source list` | `roster.catalog/v1`; schema `schema/roster.catalog.v1.schema.json` |
+| `sy provider` | one `provider/v1` result frame; manifest `share/seshy/providers/seshy.yaml` |
+
+## Exit status
+
+Scripts branch on the exit status:
+
+| Status | Meaning |
+| --- | --- |
+| 0 | success |
+| 1 | failure |
+| 2 | usage error |
+| 3 | session, repo, or archive entry not found |
+| 4 | refused: a confirmation seshy could not ask for, or was answered no |
+| 128 | git failed; git's own message follows `fatal:` |
 
 ## Configuration
 

@@ -14,6 +14,7 @@ import (
 
 var (
 	forceDelete    bool
+	yesDelete      bool
 	deleteArchived bool
 )
 
@@ -61,7 +62,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		ok, err := confirm(fmt.Sprintf("Delete session %s and its worktrees/branches?", ui.AccentBold(name)), forceDelete)
+		ok, err := confirm(fmt.Sprintf("Delete session %s and its worktrees/branches?", ui.AccentBold(name)), skipConfirm(yesDelete, forceDelete))
 		if err != nil || !ok {
 			return err
 		}
@@ -99,6 +100,7 @@ func reportDeleteResult(name string, err error) error {
 
 func init() {
 	deleteCmd.Flags().BoolVarP(&forceDelete, "force", "f", false, "Skip confirmation and delete even if worktree cleanup fails")
+	deleteCmd.Flags().BoolVarP(&yesDelete, "yes", "y", false, "Skip the confirmation prompt")
 	deleteCmd.Flags().BoolVar(&deleteArchived, "archived", false, "Delete an archived session instead of an active one")
 	rootCmd.AddCommand(deleteCmd)
 }

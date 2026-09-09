@@ -1,0 +1,335 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "Display": {
+      "properties": {
+        "label": {
+          "type": "string",
+          "description": "Heading for the source"
+        },
+        "glyph": {
+          "type": "string",
+          "description": "Icon name the display resolves; empty for none"
+        },
+        "order": {
+          "type": "integer",
+          "description": "Sort key across sources; lower first"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "label",
+        "glyph",
+        "order"
+      ]
+    },
+    "Duration": {
+      "type": "string",
+      "pattern": "^([0-9]+(\\.[0-9]+)?(ns|us|µs|ms|s|m|h))+$",
+      "description": "Go duration such as 500ms, 10s, 1h30m, or 1.5s"
+    },
+    "Group": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Group identifier"
+        },
+        "label": {
+          "type": "string"
+        },
+        "glyph": {
+          "type": "string"
+        },
+        "ok": {
+          "type": "boolean",
+          "description": "False when the group could not be listed"
+        },
+        "stale": {
+          "type": "boolean",
+          "description": "True when the source served cached rows for this group"
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Why ok or stale is set; null otherwise"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meta": {
+          "type": "object",
+          "description": "Source-private data the display passes through"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "label",
+        "glyph",
+        "ok",
+        "stale",
+        "reason",
+        "meta"
+      ]
+    },
+    "Row": {
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Row identifier"
+        },
+        "workspace": {
+          "type": "string",
+          "description": "Workspace name"
+        },
+        "label": {
+          "type": "string"
+        },
+        "group": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Group id or null"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "description": "Row kind"
+        },
+        "host": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Remote host or null for local"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "cwd": {
+          "type": "string"
+        },
+        "status": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/Status"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "pane": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Pane identifier when a live pane shows this row"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "spawn": {
+          "$ref": "#/$defs/Spawn"
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "string",
+              "description": "Set by roster when the row is rejected"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "meta": {
+          "type": "object"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "id",
+        "workspace",
+        "label",
+        "group",
+        "kind",
+        "host",
+        "cwd",
+        "status",
+        "pane",
+        "spawn",
+        "meta"
+      ]
+    },
+    "Spawn": {
+      "oneOf": [
+        {
+          "properties": {
+            "plan": {
+              "properties": {
+                "command": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                "cwd": {
+                  "type": "string"
+                },
+                "environment": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "type": "object"
+                },
+                "successCodes": {
+                  "items": {
+                    "type": "integer"
+                  },
+                  "type": "array"
+                }
+              },
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "command",
+                "cwd",
+                "environment",
+                "successCodes"
+              ]
+            },
+            "hop": {
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "local",
+                    "native"
+                  ]
+                },
+                "ref": {
+                  "type": "string"
+                }
+              },
+              "additionalProperties": false,
+              "type": "object",
+              "required": [
+                "kind"
+              ]
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "plan",
+            "hop"
+          ]
+        },
+        {
+          "properties": {
+            "resolve": {
+              "type": "boolean",
+              "const": true
+            }
+          },
+          "additionalProperties": false,
+          "type": "object",
+          "required": [
+            "resolve"
+          ]
+        }
+      ],
+      "description": "Either a plan and a hop, or resolve: true to defer the plan to source.open"
+    },
+    "Status": {
+      "properties": {
+        "state": {
+          "type": "string"
+        },
+        "reason": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "since": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "state",
+        "reason",
+        "since"
+      ]
+    }
+  },
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": [
+        "roster.catalog/v1"
+      ],
+      "description": "Document version"
+    },
+    "source": {
+      "type": "string",
+      "description": "Provider name of the source that listed these rows"
+    },
+    "generated_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "When roster wrote the file (RFC 3339)"
+    },
+    "ttl": {
+      "$ref": "#/$defs/Duration",
+      "description": "Age after which the file is stale"
+    },
+    "display": {
+      "$ref": "#/$defs/Display"
+    },
+    "groups": {
+      "items": {
+        "$ref": "#/$defs/Group"
+      },
+      "type": "array"
+    },
+    "rows": {
+      "items": {
+        "$ref": "#/$defs/Row"
+      },
+      "type": "array"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "version",
+    "source",
+    "generated_at",
+    "ttl",
+    "display",
+    "groups",
+    "rows"
+  ],
+  "title": "roster.catalog/v1"
+}

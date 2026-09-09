@@ -13,9 +13,12 @@ import (
 	"github.com/spf13/cobra"
 )
 
-const version = "4.2.0"
+const version = "4.3.0"
 
-var greedyQuery string
+var (
+	greedyQuery string
+	configPath  string
+)
 
 // preRunReached records that cobra finished parsing flags and validating
 // arguments for the invoked command. An error returned before that point is a
@@ -33,6 +36,7 @@ var rootCmd = &cobra.Command{
 	SilenceUsage:  true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		preRunReached = true
+		config.SetPath(configPath)
 		if cmd == configEditCmd || cmd == configInitCmd {
 			return nil
 		}
@@ -57,7 +61,7 @@ var rootCmd = &cobra.Command{
 		}
 
 		// Default: show list (same as `sy list`)
-		return printSessionList(sessions, "", noSessionsMessage())
+		return printSessionList(sessions, formatTable, noSessionsMessage(), false)
 	},
 }
 
@@ -67,17 +71,18 @@ func noSessionsMessage() string {
 }
 
 // printSessionList renders sessions in the requested format. empty is the
-// message shown when the list has no entries and the format is the human table.
-func printSessionList(sessions []session.Session, format, empty string) error {
+// message shown when the list has no entries and the format is the human
+// table. archived is reported in the JSON entries.
+func printSessionList(sessions []session.Session, format, empty string, archived bool) error {
 	switch format {
-	case "json":
-		return printSessionsJSON(sessions)
-	case "names":
+	case formatJSON:
+		return printSessionsJSON(sessions, archived)
+	case formatNames:
 		for _, s := range sessions {
 			fmt.Println(s.Name)
 		}
 		return nil
-	case "paths":
+	case formatPaths:
 		for _, s := range sessions {
 			fmt.Println(s.Path)
 		}
@@ -162,4 +167,5 @@ func init() {
 	rootCmd.SetVersionTemplate(fmt.Sprintf("sy version %s\n", version))
 	rootCmd.SetUsageTemplate(rootCmd.UsageTemplate() + rootUsageSections)
 	rootCmd.Flags().StringVar(&greedyQuery, "greedy", "", "Fuzzy-match a session name and print its path")
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Config file, instead of $SESHY_CONFIG or $XDG_CONFIG_HOME/seshy/config.yaml")
 }

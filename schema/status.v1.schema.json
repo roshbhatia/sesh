@@ -1,0 +1,91 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$defs": {
+    "statusRepoJSON": {
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Entry basename in the session directory"
+        },
+        "path": {
+          "type": "string",
+          "description": "Absolute entry path"
+        },
+        "source": {
+          "type": "string",
+          "description": "Absolute path of the source repo or linked directory"
+        },
+        "branch": {
+          "type": "string",
+          "description": "Checked-out branch; empty for a symlink; HEAD when detached"
+        },
+        "kind": {
+          "type": "string",
+          "enum": [
+            "worktree",
+            "symlink",
+            "clone"
+          ],
+          "description": "What the entry is"
+        },
+        "locked": {
+          "type": "boolean",
+          "description": "The worktree is locked in its source repo"
+        },
+        "detached": {
+          "type": "boolean",
+          "description": "The worktree is on no branch"
+        },
+        "branchReused": {
+          "type": "boolean",
+          "description": "The branch existed before seshy checked it out"
+        }
+      },
+      "additionalProperties": false,
+      "type": "object",
+      "required": [
+        "name",
+        "path",
+        "source",
+        "branch",
+        "kind",
+        "locked",
+        "detached",
+        "branchReused"
+      ]
+    }
+  },
+  "properties": {
+    "version": {
+      "type": "string",
+      "enum": [
+        "seshy.status/v1"
+      ],
+      "description": "Document version"
+    },
+    "name": {
+      "type": "string",
+      "description": "Session name"
+    },
+    "path": {
+      "type": "string",
+      "description": "Absolute session directory"
+    },
+    "repos": {
+      "items": {
+        "$ref": "#/$defs/statusRepoJSON"
+      },
+      "type": "array",
+      "description": "Repo entries in directory order"
+    }
+  },
+  "additionalProperties": false,
+  "type": "object",
+  "required": [
+    "version",
+    "name",
+    "path",
+    "repos"
+  ],
+  "title": "seshy.status/v1"
+}

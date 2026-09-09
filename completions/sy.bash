@@ -1,5 +1,5 @@
 __sy_completion_values_0() {
-  printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'path' 'remove' 'rename' 'status' 'switch' 'unarchive'
+  printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'prune' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive'
   'sy' '__values' 'active' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
 }
 __sy_completion_values_1() {
@@ -24,10 +24,10 @@ __sy_completion_values_7() {
   'sy' '__values' 'active' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
 }
 __sy_completion_values_8() {
-  'sy' '__values' 'remove' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
+  'sy' '__values' 'active' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
 }
 __sy_completion_values_9() {
-  'sy' '__values' 'active' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
+  'sy' '__values' 'remove' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
 }
 __sy_completion_values_10() {
   'sy' '__values' 'active' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
@@ -36,6 +36,9 @@ __sy_completion_values_11() {
   'sy' '__values' 'active' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
 }
 __sy_completion_values_12() {
+  'sy' '__values' 'active' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
+}
+__sy_completion_values_13() {
   'sy' '__values' 'archived' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
 }
 __sy_completion_filter() {
@@ -84,16 +87,24 @@ _sy_complete() {
       continue
     fi
     case "$context:$word" in
+      ':--config') consume_value=1; continue ;;
+      ':--config='*) continue ;;
       ':--greedy') consume_value=1; continue ;;
       ':--greedy='*) continue ;;
       'add:--branch') consume_value=1; continue ;;
       'add:--branch='*) continue ;;
       'add:-b') consume_value=1; continue ;;
       'add:-b='*) continue ;;
+      'list:--format') consume_value=1; continue ;;
+      'list:--format='*) continue ;;
       'new:--branch') consume_value=1; continue ;;
       'new:--branch='*) continue ;;
       'new:-b') consume_value=1; continue ;;
       'new:-b='*) continue ;;
+      'open:--format') consume_value=1; continue ;;
+      'open:--format='*) continue ;;
+      'status:--format') consume_value=1; continue ;;
+      'status:--format='*) continue ;;
     esac
     case "$context:$word" in
       ':completion') context='completion' ;;
@@ -109,9 +120,14 @@ _sy_complete() {
       ':init') context='init' ;;
       ':list') context='list' ;;
       ':new') context='new' ;;
+      ':open') context='open' ;;
       ':path') context='path' ;;
+      ':provider') context='provider' ;;
+      ':prune') context='prune' ;;
       ':remove') context='remove' ;;
       ':rename') context='rename' ;;
+      ':source') context='source' ;;
+      'source:list') context='source list' ;;
       ':status') context='status' ;;
       ':switch') context='switch' ;;
       ':unarchive') context='unarchive' ;;
@@ -124,7 +140,7 @@ _sy_complete() {
   case "$context" in
     '')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'path' 'remove' 'rename' 'status' 'switch' 'unarchive' '--greedy'
+        printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'prune' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive' '--config' '--greedy'
         __sy_completion_values_0
       )
       ;;
@@ -169,7 +185,7 @@ _sy_complete() {
       ;;
     'delete')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' '--archived' '--force' '-f'
+        printf '%s\n' '--archived' '--force' '-f' '--yes' '-y'
         __sy_completion_values_4
       )
       ;;
@@ -184,7 +200,7 @@ _sy_complete() {
       ;;
     'list')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' '--archived' '--json' '--names' '--paths'
+        printf '%s\n' '--archived' '--format' '--json' '--names' '--paths'
       )
       ;;
     'new')
@@ -193,36 +209,61 @@ _sy_complete() {
         __sy_completion_values_6
       )
       ;;
+    'open')
+      __sy_completion_filter "$current" < <(
+        printf '%s\n' '--format'
+        __sy_completion_values_7
+      )
+      ;;
     'path')
       __sy_completion_filter "$current" < <(
-        __sy_completion_values_7
+        __sy_completion_values_8
+      )
+      ;;
+    'provider')
+      __sy_completion_filter "$current" < <(
+      )
+      ;;
+    'prune')
+      __sy_completion_filter "$current" < <(
+        printf '%s\n' '--dry-run'
       )
       ;;
     'remove')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' '--force' '-f'
-        __sy_completion_values_8
+        printf '%s\n' '--force' '-f' '--yes' '-y'
+        __sy_completion_values_9
       )
       ;;
     'rename')
       __sy_completion_filter "$current" < <(
-        __sy_completion_values_9
+        __sy_completion_values_10
+      )
+      ;;
+    'source')
+      __sy_completion_filter "$current" < <(
+        printf '%s\n' 'list'
+      )
+      ;;
+    'source list')
+      __sy_completion_filter "$current" < <(
       )
       ;;
     'status')
       __sy_completion_filter "$current" < <(
-        __sy_completion_values_10
+        printf '%s\n' '--format'
+        __sy_completion_values_11
       )
       ;;
     'switch')
       __sy_completion_filter "$current" < <(
         printf '%s\n' '--name'
-        __sy_completion_values_11
+        __sy_completion_values_12
       )
       ;;
     'unarchive')
       __sy_completion_filter "$current" < <(
-        __sy_completion_values_12
+        __sy_completion_values_13
       )
       ;;
   esac

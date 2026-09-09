@@ -1,7 +1,7 @@
 #compdef sy
 __sy_completion_values_0() {
   local -a values
-  values=( 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'path' 'remove' 'rename' 'status' 'switch' 'unarchive')
+  values=( 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'prune' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive')
   values+=("${(@f)$('sy' '__values' 'active' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
   compadd -a values
 }
@@ -50,13 +50,13 @@ __sy_completion_values_7() {
 __sy_completion_values_8() {
   local -a values
   values=()
-  values+=("${(@f)$('sy' '__values' 'remove' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
+  values+=("${(@f)$('sy' '__values' 'active' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
   compadd -a values
 }
 __sy_completion_values_9() {
   local -a values
   values=()
-  values+=("${(@f)$('sy' '__values' 'active' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
+  values+=("${(@f)$('sy' '__values' 'remove' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
   compadd -a values
 }
 __sy_completion_values_10() {
@@ -72,6 +72,12 @@ __sy_completion_values_11() {
   compadd -a values
 }
 __sy_completion_values_12() {
+  local -a values
+  values=()
+  values+=("${(@f)$('sy' '__values' 'active' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
+  compadd -a values
+}
+__sy_completion_values_13() {
   local -a values
   values=()
   values+=("${(@f)$('sy' '__values' 'archived' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
@@ -96,16 +102,24 @@ _sy() {
       continue
     fi
     case "$context:$word" in
+      ':--config') consume_value=1; continue ;;
+      ':--config='*) continue ;;
       ':--greedy') consume_value=1; continue ;;
       ':--greedy='*) continue ;;
       'add:--branch') consume_value=1; continue ;;
       'add:--branch='*) continue ;;
       'add:-b') consume_value=1; continue ;;
       'add:-b='*) continue ;;
+      'list:--format') consume_value=1; continue ;;
+      'list:--format='*) continue ;;
       'new:--branch') consume_value=1; continue ;;
       'new:--branch='*) continue ;;
       'new:-b') consume_value=1; continue ;;
       'new:-b='*) continue ;;
+      'open:--format') consume_value=1; continue ;;
+      'open:--format='*) continue ;;
+      'status:--format') consume_value=1; continue ;;
+      'status:--format='*) continue ;;
     esac
     case "$context:$word" in
       ':completion') context='completion' ;;
@@ -121,9 +135,14 @@ _sy() {
       ':init') context='init' ;;
       ':list') context='list' ;;
       ':new') context='new' ;;
+      ':open') context='open' ;;
       ':path') context='path' ;;
+      ':provider') context='provider' ;;
+      ':prune') context='prune' ;;
       ':remove') context='remove' ;;
       ':rename') context='rename' ;;
+      ':source') context='source' ;;
+      'source:list') context='source list' ;;
       ':status') context='status' ;;
       ':switch') context='switch' ;;
       ':unarchive') context='unarchive' ;;
@@ -132,6 +151,7 @@ _sy() {
   case "$context" in
     '')
       _arguments \
+        '--config[Config file, instead of $SESHY_CONFIG or $XDG_CONFIG_HOME/seshy/config.yaml]:value:' \
         '--greedy[Fuzzy-match a session name and print its path]:value:' \
         '*:argument:__sy_completion_values_0'
 
@@ -183,6 +203,7 @@ _sy() {
       _arguments \
         '--archived[Delete an archived session instead of an active one]' \
         '(-f)--force[Skip confirmation and delete even if worktree cleanup fails]' \
+        '(-y)--yes[Skip the confirmation prompt]' \
         '*:argument:__sy_completion_values_4'
 
       ;;
@@ -199,6 +220,7 @@ _sy() {
     'list')
       _arguments \
         '--archived[List archived sessions instead of active ones]' \
+        '--format[Output format: table, json, names, paths]:value:' \
         '--json[Output JSON]' \
         '--names[Output session names only]' \
         '--paths[Output session paths only]' \
@@ -213,36 +235,65 @@ _sy() {
         '*:argument:__sy_completion_values_6'
 
       ;;
+    'open')
+      _arguments \
+        '--format[Output format: table, json]:value:' \
+        '*:argument:__sy_completion_values_7'
+
+      ;;
     'path')
       _arguments \
-        '*:argument:__sy_completion_values_7'
+        '*:argument:__sy_completion_values_8'
+
+      ;;
+    'provider')
+      _arguments \
+        '*:argument:'
+
+      ;;
+    'prune')
+      _arguments \
+        '--dry-run[Print the actions without taking them]' \
+        '*:argument:'
 
       ;;
     'remove')
       _arguments \
-        '(-f)--force[Skip confirmation prompt]' \
-        '*:argument:__sy_completion_values_8'
+        '(-f)--force[Skip confirmation prompt and remove even if worktree cleanup fails]' \
+        '(-y)--yes[Skip the confirmation prompt]' \
+        '*:argument:__sy_completion_values_9'
 
       ;;
     'rename')
       _arguments \
-        '*:argument:__sy_completion_values_9'
+        '*:argument:__sy_completion_values_10'
+
+      ;;
+    'source')
+      _arguments \
+        '2:command:(list)'
+
+      ;;
+    'source list')
+      _arguments \
+        '*:argument:'
 
       ;;
     'status')
       _arguments \
-        '*:argument:__sy_completion_values_10'
+        '--format[Output format: table, json]:value:' \
+        '*:argument:__sy_completion_values_11'
 
       ;;
     'switch')
       _arguments \
         '--name[Print the resolved name instead of the path]' \
-        '*:argument:__sy_completion_values_11'
+        '*:argument:__sy_completion_values_12'
 
       ;;
     'unarchive')
       _arguments \
-        '*:argument:__sy_completion_values_12'
+        '*:argument:__sy_completion_values_13'
 
       ;;
   esac

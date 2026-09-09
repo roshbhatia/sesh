@@ -1,0 +1,9 @@
+# Must fail: source.list is required.
+version: provider/v1
+kind: source
+name: seshy
+description: No list action
+command: [sy, provider]
+actions:
+  source.open:
+    description: Open

@@ -12,7 +12,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-var forceRemove bool
+var (
+	forceRemove bool
+	yesRemove   bool
+)
 
 var removeCmd = &cobra.Command{
 	Use:   "remove <session> <repo>",
@@ -49,7 +52,7 @@ var removeCmd = &cobra.Command{
 			return err
 		}
 
-		ok, err := confirm(fmt.Sprintf("Remove repo %s from session %s?", ui.AccentBold(repoName), ui.AccentBold(name)), forceRemove)
+		ok, err := confirm(fmt.Sprintf("Remove repo %s from session %s?", ui.AccentBold(repoName), ui.AccentBold(name)), skipConfirm(yesRemove, forceRemove))
 		if err != nil || !ok {
 			return err
 		}
@@ -70,6 +73,7 @@ var removeCmd = &cobra.Command{
 }
 
 func init() {
-	removeCmd.Flags().BoolVarP(&forceRemove, "force", "f", false, "Skip confirmation prompt")
+	removeCmd.Flags().BoolVarP(&forceRemove, "force", "f", false, "Skip confirmation prompt and remove even if worktree cleanup fails")
+	removeCmd.Flags().BoolVarP(&yesRemove, "yes", "y", false, "Skip the confirmation prompt")
 	rootCmd.AddCommand(removeCmd)
 }

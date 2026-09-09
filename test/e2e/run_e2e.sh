@@ -355,6 +355,50 @@ scenario_exit_statuses() {
   assert_dir_exists "worktree named after the toplevel" "$sess_root/sub/api"
 }
 
+# Scenario 9: plumbing surfaces a launcher and roster read
+scenario_plumbing_surfaces() {
+  local tmp="$1"
+  local sess_root="$tmp/state/seshy/sessions"
+
+  make_git_repo "$tmp/repos/api" "api"
+  sy new feature "$tmp/repos/api" 2>/dev/null
+
+  # list --format json is the bare array with the new keys.
+  out=$(sy list --format json)
+  assert_contains "list id" "$out" '"id": "seshy:feature"'
+  assert_contains "list archived" "$out" '"archived": false'
+
+  # open --format json is the launch plan; the bare form is the path.
+  out=$(sy open feature --format json)
+  assert_contains "open version" "$out" '"version": "seshy.open/v1"'
+  assert_contains "open env" "$out" '"SESHY_SESSION": "feature"'
+  path=$(sy open feature)
+  assert_dir_exists "open path" "$path"
+  sy open gone --format json 2>/dev/null && code=0 || code=$?
+  [ "$code" -eq 3 ] || die "open of a gone session should exit 3, got $code"
+
+  # status --format json describes the worktree entry.
+  out=$(sy status feature --format json)
+  assert_contains "status version" "$out" '"version": "seshy.status/v1"'
+  assert_contains "status kind" "$out" '"kind": "worktree"'
+  assert_contains "status branch" "$out" '"branch": "sy/feature/api"'
+
+  # source list is one roster catalog; provider answers the same over a frame.
+  out=$(sy source list)
+  assert_contains "catalog version" "$out" '"version": "roster.catalog/v1"'
+  assert_contains "catalog row" "$out" '"id": "seshy:feature"'
+  frame='{"version":"provider/v1","kind":"request","requestId":"r","capability":"source.list"}'
+  out=$(printf '%s' "$frame" | sy provider)
+  assert_contains "provider ok" "$out" '"status":"ok"'
+  assert_contains "provider rows" "$out" 'seshy:feature'
+
+  # prune --dry-run names the orphan branch a removed session left behind.
+  rm -rf "$sess_root/feature"
+  out=$(sy prune --dry-run "$tmp/repos/api" 2>&1)
+  assert_contains "prune dry run" "$out" "would delete branch sy/feature/api"
+  git -C "$tmp/repos/api" rev-parse --verify --quiet refs/heads/sy/feature/api >/dev/null || die "dry run deleted the branch"
+}
+
 # ── run all scenarios ─────────────────────────────────────────────────────────
 
 echo "Running e2e scenarios..."
@@ -368,6 +412,7 @@ run_scenario "multi-session isolation" scenario_multi_session_isolation
 run_scenario "greedy single-line output" scenario_greedy_single_line_output
 run_scenario "delete alias and repository removal" scenario_delete_and_remove
 run_scenario "exit statuses" scenario_exit_statuses
+run_scenario "plumbing surfaces" scenario_plumbing_surfaces
 
 echo "Results: $PASS passed, $FAIL failed"
 

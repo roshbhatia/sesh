@@ -1,27 +1,31 @@
 package cmd
 
 import (
-	"fmt"
+	"os"
 
+	"github.com/roshbhatia/go-utils/ui"
 	"github.com/roshbhatia/seshy/internal/config"
 	"github.com/spf13/cobra"
-	"go.yaml.in/yaml/v3"
 )
 
 var configCmd = &cobra.Command{
 	Use:   "config",
 	Short: "Show effective configuration",
+	Long: `Show the effective configuration with the origin of each value.
+
+Origin is one of env, file, or default, in that precedence. branchFormat is
+additionally overridable per source repo through git config seshy.branchFormat,
+which this global view does not read.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
-		cfg, err := config.Load()
+		settings, err := config.Effective()
 		if err != nil {
 			return err
 		}
-		out, err := yaml.Marshal(cfg)
-		if err != nil {
-			return fmt.Errorf("marshalling config: %w", err)
+		rows := make([][]string, len(settings))
+		for i, s := range settings {
+			rows[i] = []string{s.Name, s.Value, ui.StdoutFaint(string(s.Origin))}
 		}
-		fmt.Print(string(out))
-		return nil
+		return table(os.Stdout, []string{"SETTING", "VALUE", "ORIGIN"}, rows)
 	},
 }
 

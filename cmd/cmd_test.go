@@ -72,9 +72,20 @@ func runCmd(args ...string) (stdout, stderr string, err error) {
 
 	// Reset persistent flags before each run
 	greedyQuery = ""
+	configPath = ""
 	forceDelete = false
+	yesDelete = false
+	forceRemove = false
+	yesRemove = false
 	deleteArchived = false
 	listArchived = false
+	listFormat = ""
+	listJSON = false
+	listNames = false
+	listPaths = false
+	openFormat = ""
+	statusFormat = ""
+	pruneDryRun = false
 	newBranch = ""
 	newStdin = false
 	newEmpty = false
@@ -754,6 +765,9 @@ func TestListJSON(t *testing.T) {
 	listJSON = false
 	listNames = false
 	listPaths = false
+	openFormat = ""
+	statusFormat = ""
+	pruneDryRun = false
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
@@ -776,6 +790,9 @@ func TestListNames(t *testing.T) {
 	listJSON = false
 	listNames = false
 	listPaths = false
+	openFormat = ""
+	statusFormat = ""
+	pruneDryRun = false
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
@@ -795,6 +812,9 @@ func TestListPaths(t *testing.T) {
 	listJSON = false
 	listNames = false
 	listPaths = false
+	openFormat = ""
+	statusFormat = ""
+	pruneDryRun = false
 	tmp := t.TempDir()
 	repo := filepath.Join(tmp, "r")
 	setupGitRepo(t, repo)
@@ -814,6 +834,9 @@ func TestListEmpty(t *testing.T) {
 	listJSON = false
 	listNames = false
 	listPaths = false
+	openFormat = ""
+	statusFormat = ""
+	pruneDryRun = false
 	stdout, _, err := runCmd("list", "--json")
 	if err != nil {
 		t.Fatalf("list --json empty: %v", err)
@@ -842,7 +865,7 @@ func TestPrintSessionListAlignsColoredHeader(t *testing.T) {
 	origStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	err := printSessionList(sessions, "", "none")
+	err := printSessionList(sessions, formatTable, "none", false)
 	w.Close()
 	os.Stdout = origStdout
 	if err != nil {
@@ -878,7 +901,7 @@ func TestPrintSessionListNoColorWhenStdoutRedirected(t *testing.T) {
 	origStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	err := printSessionList(sessions, "", "none")
+	err := printSessionList(sessions, formatTable, "none", false)
 	w.Close()
 	os.Stdout = origStdout
 	if err != nil {
@@ -1036,7 +1059,7 @@ func TestPrintSessionListPipedBytes(t *testing.T) {
 	origStdout := os.Stdout
 	r, w, _ := os.Pipe()
 	os.Stdout = w
-	err := printSessionList(sessions, "", "none")
+	err := printSessionList(sessions, formatTable, "none", false)
 	w.Close()
 	os.Stdout = origStdout
 	if err != nil {

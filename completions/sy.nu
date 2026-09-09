@@ -1,11 +1,12 @@
 export def --env sy [
+  --config: string # Config file, instead of $SESHY_CONFIG or $XDG_CONFIG_HOME/seshy/config.yaml
   --greedy: string # Fuzzy-match a session name and print its path
   ...args: string@"__sy_completion_values_0"
 ] {
   if $greedy != null {
     return (^sy --greedy $greedy ...$args)
   }
-  if (($args | length) == 1) and (not ($args.0 | str starts-with "-")) and ($args.0 not-in ["__values" "add" "archive" "at" "attach" "completion" "config" "cur" "current" "delete" "generate" "help" "info" "init" "list" "ls" "new" "path" "remove" "rename" "restore" "rm" "status" "sw" "switch" "unarchive"]) {
+  if (($args | length) == 1) and (not ($args.0 | str starts-with "-")) and ($args.0 not-in ["__values" "add" "archive" "at" "attach" "completion" "config" "cur" "current" "delete" "generate" "help" "info" "init" "list" "ls" "new" "open" "path" "provider" "prune" "remove" "rename" "restore" "rm" "source" "status" "sw" "switch" "unarchive"]) {
     let resolved = (^sy --greedy $args.0 | complete)
     if ($resolved.exit_code == 0) and (not ($resolved.stdout | str trim | is-empty)) {
       cd ($resolved.stdout | str trim)
@@ -56,6 +57,7 @@ export extern "sy current" [
 export extern "sy delete" [
   --archived # Delete an archived session instead of an active one
   --force(-f) # Skip confirmation and delete even if worktree cleanup fails
+  --yes(-y) # Skip the confirmation prompt
   ...args: string@"__sy_completion_values_4"
 ]
 
@@ -69,6 +71,7 @@ export extern "sy init" [
 
 export extern "sy list" [
   --archived # List archived sessions instead of active ones
+  --format: string # Output format: table, json, names, paths
   --json # Output JSON
   --names # Output session names only
   --paths # Output session paths only
@@ -82,30 +85,54 @@ export extern "sy new" [
   ...args: string@"__sy_completion_values_6"
 ]
 
-export extern "sy path" [
+export extern "sy open" [
+  --format: string # Output format: table, json
   ...args: string@"__sy_completion_values_7"
 ]
 
-export extern "sy remove" [
-  --force(-f) # Skip confirmation prompt
+export extern "sy path" [
   ...args: string@"__sy_completion_values_8"
 ]
 
-export extern "sy rename" [
+export extern "sy provider" [
+  ...args: string@"__sy_completion_none"
+]
+
+export extern "sy prune" [
+  --dry-run # Print the actions without taking them
+  ...args: string@"__sy_completion_none"
+]
+
+export extern "sy remove" [
+  --force(-f) # Skip confirmation prompt and remove even if worktree cleanup fails
+  --yes(-y) # Skip the confirmation prompt
   ...args: string@"__sy_completion_values_9"
 ]
 
-export extern "sy status" [
+export extern "sy rename" [
   ...args: string@"__sy_completion_values_10"
+]
+
+export extern "sy source" [
+  ...args: string@"__sy_completion_none"
+]
+
+export extern "sy source list" [
+  ...args: string@"__sy_completion_none"
+]
+
+export extern "sy status" [
+  --format: string # Output format: table, json
+  ...args: string@"__sy_completion_values_11"
 ]
 
 export extern "sy switch" [
   --name # Print the resolved name instead of the path
-  ...args: string@"__sy_completion_values_11"
+  ...args: string@"__sy_completion_values_12"
 ]
 
 export extern "sy unarchive" [
-  ...args: string@"__sy_completion_values_12"
+  ...args: string@"__sy_completion_values_13"
 ]
 
 def "__sy_completion_none" [] { [] }
@@ -123,9 +150,13 @@ def "__sy_completion_values_0" [context?: string] {
     "init"
     "list"
     "new"
+    "open"
     "path"
+    "provider"
+    "prune"
     "remove"
     "rename"
+    "source"
     "status"
     "switch"
     "unarchive"
@@ -177,13 +208,13 @@ def "__sy_completion_values_7" [context?: string] {
 
 def "__sy_completion_values_8" [context?: string] {
   [
-    (try { run-external "sy" "__values" "remove" ($context | default "") | lines } catch { [] })
+    (try { run-external "sy" "__values" "active" ($context | default "") | lines } catch { [] })
   ] | flatten | uniq
 }
 
 def "__sy_completion_values_9" [context?: string] {
   [
-    (try { run-external "sy" "__values" "active" ($context | default "") | lines } catch { [] })
+    (try { run-external "sy" "__values" "remove" ($context | default "") | lines } catch { [] })
   ] | flatten | uniq
 }
 
@@ -200,6 +231,12 @@ def "__sy_completion_values_11" [context?: string] {
 }
 
 def "__sy_completion_values_12" [context?: string] {
+  [
+    (try { run-external "sy" "__values" "active" ($context | default "") | lines } catch { [] })
+  ] | flatten | uniq
+}
+
+def "__sy_completion_values_13" [context?: string] {
   [
     (try { run-external "sy" "__values" "archived" ($context | default "") | lines } catch { [] })
   ] | flatten | uniq

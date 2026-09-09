@@ -210,7 +210,7 @@ func decorateCompletion(command *completion.Command, parent []string) {
 	switch joined {
 	case "add":
 		command.CompletionCommand = valuesInvocation("add")
-	case "archive", "attach", "path", "rename", "status", "switch":
+	case "archive", "attach", "open", "path", "rename", "status", "switch":
 		command.CompletionCommand = valuesInvocation("active")
 	case "delete":
 		command.CompletionCommand = valuesInvocation("sessions")
@@ -273,6 +273,13 @@ func generateRepository(check bool) error {
 	outputs := map[string][]byte{
 		"README.md":                 []byte(updated),
 		"schema/config.schema.json": schema,
+	}
+	schemas, err := outputSchemas()
+	if err != nil {
+		return err
+	}
+	for path, content := range schemas {
+		outputs[path] = content
 	}
 	for _, shell := range []string{"bash", "fish", "nu", "zsh"} {
 		generated, generateErr := generatedCompletion(shell)
