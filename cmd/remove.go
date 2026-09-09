@@ -1,11 +1,9 @@
 package cmd
 
 import (
-	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/roshbhatia/go-utils/ui"
 	"github.com/roshbhatia/seshy/internal/config"
@@ -51,15 +49,9 @@ var removeCmd = &cobra.Command{
 			return err
 		}
 
-		if !forceRemove {
-			fmt.Fprintf(os.Stderr, "Remove repo %s from session %s? [y/N] ", ui.AccentBold(repoName), ui.AccentBold(name))
-			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			answer = strings.TrimSpace(strings.ToLower(answer))
-			if answer != "y" && answer != "yes" {
-				fmt.Fprintln(os.Stderr, ui.Info("Cancelled."))
-				return nil
-			}
+		ok, err := confirm(fmt.Sprintf("Remove repo %s from session %s?", ui.AccentBold(repoName), ui.AccentBold(name)), forceRemove)
+		if err != nil || !ok {
+			return err
 		}
 
 		if err := session.RemoveRepoEntry(sessionPath, repoName, forceRemove); err != nil {

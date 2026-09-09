@@ -1,11 +1,9 @@
 package cmd
 
 import (
-	"bufio"
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/roshbhatia/go-utils/ui"
 	"github.com/roshbhatia/seshy/internal/config"
@@ -63,15 +61,9 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		if !forceDelete {
-			fmt.Fprintf(os.Stderr, "Delete session %s and its worktrees/branches? [y/N] ", ui.AccentBold(name))
-			reader := bufio.NewReader(os.Stdin)
-			answer, _ := reader.ReadString('\n')
-			answer = strings.TrimSpace(strings.ToLower(answer))
-			if answer != "y" && answer != "yes" {
-				fmt.Fprintln(os.Stderr, ui.Info("Cancelled."))
-				return nil
-			}
+		ok, err := confirm(fmt.Sprintf("Delete session %s and its worktrees/branches?", ui.AccentBold(name)), forceDelete)
+		if err != nil || !ok {
+			return err
 		}
 
 		if deleteArchived {

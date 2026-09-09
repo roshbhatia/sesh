@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -10,6 +11,7 @@ import (
 	"time"
 
 	"github.com/roshbhatia/go-utils/ui"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/roshbhatia/seshy/internal/session"
 )
 
@@ -919,5 +921,89 @@ func TestReadRepoArgsFlagReadsStdin(t *testing.T) {
 	repos, fromStdin := readRepoArgs(nil, true, strings.NewReader(""))
 	if !fromStdin || len(repos) != 0 {
 		t.Errorf("repos = %v fromStdin = %v, want none and true", repos, fromStdin)
+	}
+}
+
+// ---------------------------------------------------------------------------
+// confirmation prompt
+// ---------------------------------------------------------------------------
+
+// withStdin points os.Stdin at r for the duration of the test.
+func withStdin(t *testing.T, r *os.File) {
+	t.Helper()
+	orig := os.Stdin
+	os.Stdin = r
+	t.Cleanup(func() { os.Stdin = orig })
+}
+
+// TestDeleteRefusesToPromptWithoutTerminal: a piped stdin used to read EOF as
+// "no" and exit 0 with the session intact, which a script took for success.
+func TestDeleteRefusesToPromptWithoutTerminal(t *testing.T) {
+	isolatedRoot(t)
+	if _, _, err := runCmd("new", "keep", "--empty"); err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open devnull: %v", err)
+	}
+	defer devnull.Close()
+	withStdin(t, devnull)
+
+	_, _, err = runCmd("delete", "keep")
+	if !errors.Is(err, exitcode.ErrRefused) {
+		t.Fatalf("expected ErrRefused, got %v", err)
+	}
+	if want := "refusing to prompt; stdin is not a terminal (pass --force)"; !strings.Contains(err.Error(), want) {
+		t.Errorf("error = %q, want it to contain %q", err.Error(), want)
+	}
+	if !session.Exists("keep") {
+		t.Error("a refused delete must leave the session in place")
+	}
+}
+
+func TestRemoveRefusesToPromptWithoutTerminal(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "r")
+	setupGitRepo(t, repo)
+	if _, err := session.Create("keep-repo", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open devnull: %v", err)
+	}
+	defer devnull.Close()
+	withStdin(t, devnull)
+
+	_, _, err = runCmd("remove", "keep-repo", "r")
+	if !errors.Is(err, exitcode.ErrRefused) {
+		t.Fatalf("expected ErrRefused, got %v", err)
+	}
+	sessionPath, _ := session.Resolve("keep-repo")
+	if len(session.GetSessionRepoInfos(sessionPath)) != 1 {
+		t.Error("a refused remove must leave the repo in place")
+	}
+}
+
+// TestDeleteForceSkipsPrompt keeps --force implying "yes" until --yes exists.
+func TestDeleteForceSkipsPrompt(t *testing.T) {
+	isolatedRoot(t)
+	if _, _, err := runCmd("new", "gone", "--empty"); err != nil {
+		t.Fatalf("new: %v", err)
+	}
+	devnull, err := os.Open(os.DevNull)
+	if err != nil {
+		t.Fatalf("open devnull: %v", err)
+	}
+	defer devnull.Close()
+	withStdin(t, devnull)
+
+	if _, _, err := runCmd("delete", "--force", "gone"); err != nil {
+		t.Fatalf("delete --force: %v", err)
+	}
+	if session.Exists("gone") {
+		t.Error("--force did not delete the session")
 	}
 }

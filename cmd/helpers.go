@@ -9,7 +9,9 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/roshbhatia/go-utils/terminal"
 	"github.com/roshbhatia/go-utils/ui"
+	"github.com/roshbhatia/seshy/internal/exitcode"
 	"github.com/roshbhatia/seshy/internal/session"
 	"github.com/spf13/cobra"
 )
@@ -67,6 +69,28 @@ func runPicker(command string, input []string) ([]string, error) {
 		return nil, errNothingSelected
 	}
 	return result, nil
+}
+
+// confirm asks question on stderr and reads one line from stdin. force skips
+// the question. When stdin is not a terminal there is no one to answer, so
+// confirm refuses instead of reading EOF as "no" and exiting 0 with nothing
+// done, which a script would take for success. An explicit "no" is reported
+// as ok == false with a nil error, and the caller exits quietly.
+func confirm(question string, force bool) (ok bool, err error) {
+	if force {
+		return true, nil
+	}
+	if !terminal.IsTTY(os.Stdin) {
+		return false, fmt.Errorf("refusing to prompt; stdin is not a terminal (pass --force): %w", exitcode.ErrRefused)
+	}
+	fmt.Fprintf(os.Stderr, "%s [y/N] ", question)
+	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer != "y" && answer != "yes" {
+		fmt.Fprintln(os.Stderr, ui.Info("Cancelled."))
+		return false, nil
+	}
+	return true, nil
 }
 
 // readRepoArgs returns the repo paths named on the command line, plus one per
