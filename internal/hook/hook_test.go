@@ -126,3 +126,23 @@ touch {{.}}
 		t.Error("hook script did not run")
 	}
 }
+
+// TestRunDropsInheritedGitDir keeps a caller's GIT_DIR out of the hook. With
+// it inherited, every git command in the hook would act on the invoking
+// repository instead of the session worktree it runs in.
+func TestRunDropsInheritedGitDir(t *testing.T) {
+	t.Setenv("GIT_DIR", "/elsewhere/.git")
+	t.Setenv("GIT_WORK_TREE", "/elsewhere")
+	t.Setenv("SESHY_KEEP_ME", "yes")
+	dir := t.TempDir()
+	marker := filepath.Join(dir, "env")
+	cmd := renderShellFixture(t, `env | grep -E '^(GIT_DIR|GIT_WORK_TREE|GIT_INDEX_FILE|SESHY_KEEP_ME)=' > {{.}}; true`, marker)
+	errs := Run("post-create", []string{cmd}, testData(dir), dir)
+	if len(errs) != 0 {
+		t.Fatalf("unexpected errors: %v", errs)
+	}
+	got, _ := os.ReadFile(marker)
+	if s := string(got); s != "SESHY_KEEP_ME=yes\n" {
+		t.Errorf("expected only SESHY_KEEP_ME in the hook env, got %q", s)
+	}
+}
