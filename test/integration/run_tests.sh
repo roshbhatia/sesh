@@ -114,7 +114,7 @@ make_git_repo() {
 test_version() {
   local tmp="$1"
   out=$(sy --version)
-  assert_contains "$out" "4.1.0"
+  assert_contains "$out" "4.2.0"
 }
 
 test_list_empty() {
