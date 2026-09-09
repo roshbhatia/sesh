@@ -24,6 +24,9 @@ def "nu-complete sy shell" [] { [bash zsh fish nu] }
 
 export extern "sy add" [
   --branch(-b): string # Override branch name for all worktrees
+  --existing # Check out the existing branch named by --branch
+  --reference # Link existing directories without creating worktrees
+  --start-point: string # Commit to start a new branch from (default HEAD)
   --stdin # Read repo paths from stdin
   ...args: string@"__sy_completion_values_1"
 ]
@@ -81,6 +84,9 @@ export extern "sy list" [
 export extern "sy new" [
   --branch(-b): string # Override branch name for all worktrees
   --empty # Create the session with no repositories
+  --existing # Check out the existing branch named by --branch
+  --reference # Link existing directories without creating worktrees
+  --start-point: string # Commit to start a new branch from (default HEAD)
   --stdin # Read repo paths from stdin
   ...args: string@"__sy_completion_values_6"
 ]

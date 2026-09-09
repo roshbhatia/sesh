@@ -62,7 +62,7 @@ var deleteCmd = &cobra.Command{
 			return err
 		}
 
-		ok, err := confirm(fmt.Sprintf("Delete session %s and its worktrees/branches?", ui.AccentBold(name)), skipConfirm(yesDelete, forceDelete))
+		ok, err := confirm(fmt.Sprintf("Delete session %s and its worktrees? Branches will remain.", ui.AccentBold(name)), skipConfirm(yesDelete, forceDelete))
 		if err != nil || !ok {
 			return err
 		}

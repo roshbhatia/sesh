@@ -95,12 +95,16 @@ _sy_complete() {
       'add:--branch='*) continue ;;
       'add:-b') consume_value=1; continue ;;
       'add:-b='*) continue ;;
+      'add:--start-point') consume_value=1; continue ;;
+      'add:--start-point='*) continue ;;
       'list:--format') consume_value=1; continue ;;
       'list:--format='*) continue ;;
       'new:--branch') consume_value=1; continue ;;
       'new:--branch='*) continue ;;
       'new:-b') consume_value=1; continue ;;
       'new:-b='*) continue ;;
+      'new:--start-point') consume_value=1; continue ;;
+      'new:--start-point='*) continue ;;
       'open:--format') consume_value=1; continue ;;
       'open:--format='*) continue ;;
       'status:--format') consume_value=1; continue ;;
@@ -151,7 +155,7 @@ _sy_complete() {
       ;;
     'add')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' '--branch' '-b' '--stdin'
+        printf '%s\n' '--branch' '-b' '--existing' '--reference' '--start-point' '--stdin'
         __sy_completion_values_1
       )
       ;;
@@ -205,7 +209,7 @@ _sy_complete() {
       ;;
     'new')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' '--branch' '-b' '--empty' '--stdin'
+        printf '%s\n' '--branch' '-b' '--empty' '--existing' '--reference' '--start-point' '--stdin'
         __sy_completion_values_6
       )
       ;;

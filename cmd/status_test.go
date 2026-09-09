@@ -32,7 +32,7 @@ func TestStatusFormatJSONDescribesEveryEntryKind(t *testing.T) {
 	if out, err := exec.Command("git", "-C", repo, "branch", "sy/st/api").CombinedOutput(); err != nil {
 		t.Fatalf("git branch: %v\n%s", err, out)
 	}
-	if _, err := session.Create("st", []string{repo, plain}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+	if _, err := session.Create("st", []string{repo, plain}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}", ExistingBranch: true}); err != nil {
 		t.Fatalf("create: %v", err)
 	}
 	sessionPath, _ := session.Resolve("st")

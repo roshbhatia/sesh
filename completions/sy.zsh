@@ -110,12 +110,16 @@ _sy() {
       'add:--branch='*) continue ;;
       'add:-b') consume_value=1; continue ;;
       'add:-b='*) continue ;;
+      'add:--start-point') consume_value=1; continue ;;
+      'add:--start-point='*) continue ;;
       'list:--format') consume_value=1; continue ;;
       'list:--format='*) continue ;;
       'new:--branch') consume_value=1; continue ;;
       'new:--branch='*) continue ;;
       'new:-b') consume_value=1; continue ;;
       'new:-b='*) continue ;;
+      'new:--start-point') consume_value=1; continue ;;
+      'new:--start-point='*) continue ;;
       'open:--format') consume_value=1; continue ;;
       'open:--format='*) continue ;;
       'status:--format') consume_value=1; continue ;;
@@ -163,6 +167,9 @@ _sy() {
     'add')
       _arguments \
         '(-b)--branch[Override branch name for all worktrees]:value:' \
+        '--existing[Check out the existing branch named by --branch]' \
+        '--reference[Link existing directories without creating worktrees]' \
+        '--start-point[Commit to start a new branch from (default HEAD)]:value:' \
         '--stdin[Read repo paths from stdin]' \
         '*:argument:__sy_completion_values_1'
 
@@ -231,6 +238,9 @@ _sy() {
       _arguments \
         '(-b)--branch[Override branch name for all worktrees]:value:' \
         '--empty[Create the session with no repositories]' \
+        '--existing[Check out the existing branch named by --branch]' \
+        '--reference[Link existing directories without creating worktrees]' \
+        '--start-point[Commit to start a new branch from (default HEAD)]:value:' \
         '--stdin[Read repo paths from stdin]' \
         '*:argument:__sy_completion_values_6'
 

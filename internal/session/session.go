@@ -170,6 +170,9 @@ func branchForRepo(opts CreateOpts, sessionName, repoPath string) (string, error
 type CreateOpts struct {
 	BranchFormat   string
 	BranchOverride string
+	StartPoint     string
+	ExistingBranch bool
+	Reference      bool
 	// BranchFormatFor resolves the branch-name template for one source repo,
 	// so a per-repo override can differ from BranchFormat. Nil falls back to
 	// BranchFormat.
@@ -216,9 +219,11 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 	cleanup := func() {
 		for i := len(createdList) - 1; i >= 0; i-- {
 			c := createdList[i]
-			if git.IsRepo(c.repoPath) && c.branchName != "" {
+			if git.IsRepo(c.repoPath) {
 				_ = removeWorktree(c.repoPath, c.worktreePath, true)
-				_ = git.Run(c.repoPath, "branch", "-D", c.branchName)
+				if c.branchName != "" {
+					_ = git.Run(c.repoPath, "branch", "-D", c.branchName)
+				}
 			}
 		}
 		_ = os.RemoveAll(sessionPath)
@@ -231,19 +236,23 @@ func Create(name string, repoPaths []string, opts CreateOpts) ([]RepoInfo, error
 			return nil, err
 		}
 
-		if git.IsRepo(repoPath) {
+		if git.IsRepo(repoPath) && !opts.Reference {
 			branch, err := branchForRepo(opts, name, repoPath)
 			if err != nil {
 				cleanup()
 				return nil, err
 			}
 
-			wtPath, reused, err := CreateWorktree(repoPath, sessionPath, branch)
+			wtPath, reused, err := CreateWorktree(repoPath, sessionPath, branch, opts)
 			if err != nil {
 				cleanup()
 				return nil, fmt.Errorf("failed to create worktree for %s: %w", repoPath, err)
 			}
-			createdList = append(createdList, created{worktreePath: wtPath, repoPath: repoPath, branchName: branch})
+			cleanupBranch := branch
+			if reused {
+				cleanupBranch = ""
+			}
+			createdList = append(createdList, created{worktreePath: wtPath, repoPath: repoPath, branchName: cleanupBranch})
 			recordBranch(repoPath, branch, name, reused)
 			repoInfos = append(repoInfos, RepoInfo{
 				Name:       filepath.Base(wtPath),
@@ -371,13 +380,13 @@ func AddRepos(name string, repoPaths []string, opts CreateOpts) (AddResult, []Re
 			continue
 		}
 
-		if git.IsRepo(repoPath) {
+		if git.IsRepo(repoPath) && !opts.Reference {
 			branch, err := branchForRepo(opts, name, repoPath)
 			if err != nil {
 				result.Errors[given] = err
 				continue
 			}
-			wtPath, reused, err := CreateWorktree(repoPath, sessionPath, branch)
+			wtPath, reused, err := CreateWorktree(repoPath, sessionPath, branch, opts)
 			if err != nil {
 				result.Errors[given] = err
 				continue

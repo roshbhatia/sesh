@@ -72,7 +72,7 @@ func Unarchive(name string) (string, error) {
 	return sessionPath, nil
 }
 
-// DeleteArchived removes an archived session and cleans up worktrees + branches.
+// DeleteArchived removes an archived session and its worktrees, preserving branches.
 func DeleteArchived(name string, force bool) error {
 	archivePath, err := ResolveArchived(name)
 	if err != nil {

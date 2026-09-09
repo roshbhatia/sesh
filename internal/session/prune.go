@@ -67,7 +67,7 @@ func Prune(repoArgs []string, dryRun bool) ([]PruneAction, error) {
 			if dryRun {
 				continue
 			}
-			if err := git.Run(repo, "branch", "-D", branch); err != nil {
+			if err := git.Run(repo, "branch", "-d", branch); err != nil {
 				problems = append(problems, fmt.Errorf("delete branch %s in %s: %w", branch, repo, err))
 			}
 		}
@@ -170,10 +170,16 @@ func orphanBranches(repo string) []string {
 		if !ok || sessionName == "" {
 			continue
 		}
-		if _, err := os.Stat(filepath.Join(root, sessionName)); err == nil {
+		if _, err := os.Stat(filepath.Join(root, sessionName)); !os.IsNotExist(err) {
+			continue
+		}
+		if _, err := os.Stat(filepath.Join(config.GetArchiveRoot(), sessionName)); !os.IsNotExist(err) {
 			continue
 		}
 		branch := strings.TrimSuffix(strings.TrimPrefix(key, "branch."), ".seshy-session")
+		if reused, _, err := git.ConfigGet(repo, reusedKey(branch)); err != nil || reused == "true" {
+			continue
+		}
 		branches = append(branches, branch)
 	}
 	return branches

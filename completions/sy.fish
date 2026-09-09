@@ -107,6 +107,11 @@ function __sy_completion_context
         continue
       case 'add:-b=*'
         continue
+      case 'add:--start-point'
+        set consume_value 1
+        continue
+      case 'add:--start-point=*'
+        continue
       case 'list:--format'
         set consume_value 1
         continue
@@ -118,6 +123,11 @@ function __sy_completion_context
       case 'new:--branch=*'
         continue
       case 'new:-b=*'
+        continue
+      case 'new:--start-point'
+        set consume_value 1
+        continue
+      case 'new:--start-point=*'
         continue
       case 'open:--format'
         set consume_value 1
@@ -209,6 +219,9 @@ complete -c sy -f -n 'test (__sy_completion_context) = ""' -a unarchive -d 'sy u
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a '(__sy_completion_values_0)'
 complete -c sy -f -n 'test (__sy_completion_context) = "completion"' -a 'bash zsh fish nu'
 complete -c sy -n 'test (__sy_completion_context) = "add"' -l branch -s b -r -d 'Override branch name for all worktrees'
+complete -c sy -n 'test (__sy_completion_context) = "add"' -l existing -d 'Check out the existing branch named by --branch'
+complete -c sy -n 'test (__sy_completion_context) = "add"' -l reference -d 'Link existing directories without creating worktrees'
+complete -c sy -n 'test (__sy_completion_context) = "add"' -l start-point -r -d 'Commit to start a new branch from (default HEAD)'
 complete -c sy -n 'test (__sy_completion_context) = "add"' -l stdin -d 'Read repo paths from stdin'
 complete -c sy -f -n 'test (__sy_completion_context) = "add"' -a '(__sy_completion_values_1)'
 complete -c sy -f -n 'test (__sy_completion_context) = "archive"' -a '(__sy_completion_values_2)'
@@ -229,6 +242,9 @@ complete -c sy -n 'test (__sy_completion_context) = "list"' -l names -d 'Output 
 complete -c sy -n 'test (__sy_completion_context) = "list"' -l paths -d 'Output session paths only'
 complete -c sy -n 'test (__sy_completion_context) = "new"' -l branch -s b -r -d 'Override branch name for all worktrees'
 complete -c sy -n 'test (__sy_completion_context) = "new"' -l empty -d 'Create the session with no repositories'
+complete -c sy -n 'test (__sy_completion_context) = "new"' -l existing -d 'Check out the existing branch named by --branch'
+complete -c sy -n 'test (__sy_completion_context) = "new"' -l reference -d 'Link existing directories without creating worktrees'
+complete -c sy -n 'test (__sy_completion_context) = "new"' -l start-point -r -d 'Commit to start a new branch from (default HEAD)'
 complete -c sy -n 'test (__sy_completion_context) = "new"' -l stdin -d 'Read repo paths from stdin'
 complete -c sy -f -n 'test (__sy_completion_context) = "new"' -a '(__sy_completion_values_6)'
 complete -c sy -n 'test (__sy_completion_context) = "open"' -l format -r -d 'Output format: table, json'

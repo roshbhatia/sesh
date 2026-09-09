@@ -15,8 +15,11 @@ import (
 )
 
 var (
-	addBranch string
-	addStdin  bool
+	addBranch    string
+	addStart     string
+	addExisting  bool
+	addReference bool
+	addStdin     bool
 )
 
 var addCmd = &cobra.Command{
@@ -31,6 +34,9 @@ var addCmd = &cobra.Command{
 			return err
 		}
 
+		if addExisting && addBranch == "" {
+			return fmt.Errorf("--existing requires --branch")
+		}
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
@@ -88,6 +94,9 @@ var addCmd = &cobra.Command{
 			BranchFormat:    cfg.BranchFormat,
 			BranchFormatFor: branchFormatResolver(),
 			BranchOverride:  addBranch,
+			StartPoint:      addStart,
+			ExistingBranch:  addExisting,
+			Reference:       addReference,
 		}
 
 		result, newRepos, err := session.AddRepos(name, repos, opts)
@@ -137,7 +146,13 @@ var addCmd = &cobra.Command{
 }
 
 func init() {
+	addCmd.Flags().StringVar(&addStart, "start-point", "", "Commit to start a new branch from (default HEAD)")
+	addCmd.Flags().BoolVar(&addExisting, "existing", false, "Check out the existing branch named by --branch")
+	addCmd.Flags().BoolVar(&addReference, "reference", false, "Link existing directories without creating worktrees")
 	addCmd.Flags().StringVarP(&addBranch, "branch", "b", "", "Override branch name for all worktrees")
 	addCmd.Flags().BoolVar(&addStdin, "stdin", false, "Read repo paths from stdin")
+	addCmd.MarkFlagsMutuallyExclusive("reference", "branch")
+	addCmd.MarkFlagsMutuallyExclusive("reference", "start-point")
+	addCmd.MarkFlagsMutuallyExclusive("existing", "start-point")
 	rootCmd.AddCommand(addCmd)
 }

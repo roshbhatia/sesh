@@ -276,8 +276,8 @@ func TestDeleteArchived(t *testing.T) {
 	if err != nil {
 		t.Fatalf("branch list: %v", err)
 	}
-	if strings.TrimSpace(string(out)) != "" {
-		t.Errorf("branch not cleaned up: %q", out)
+	if strings.TrimSpace(string(out)) == "" {
+		t.Errorf("archive deletion removed its branch: %q", out)
 	}
 }
 

@@ -39,15 +39,20 @@ func disambiguatedName(repoPath, sessionPath string) string {
 	}
 }
 
-// CreateWorktree creates a git worktree for the given repo in the session
-// directory. branchName is a pre-rendered branch name (from template or
-// --branch flag). The branch starts from HEAD, and an unborn repository is an
-// error rather than an orphan worktree. When the branch already exists git
-// checks it out instead of creating it, and reused reports that so the caller
-// can surface the DWIM.
-func CreateWorktree(repoPath, sessionPath, branchName string) (worktreePath string, reused bool, err error) {
+// CreateWorktree creates a checkout with an explicit branch policy.
+func CreateWorktree(repoPath, sessionPath, branchName string, opts CreateOpts) (worktreePath string, reused bool, err error) {
 	worktreePath = filepath.Join(sessionPath, disambiguatedName(repoPath, sessionPath))
-	reused, err = git.WorktreeAdd(repoPath, worktreePath, git.WorktreeAddOptions{Branch: branchName, Start: "HEAD", Reuse: true})
+	if opts.ExistingBranch {
+		if err := git.Run(repoPath, "worktree", "add", "--", worktreePath, branchName); err != nil {
+			return "", false, err
+		}
+		return worktreePath, true, nil
+	}
+	start := opts.StartPoint
+	if start == "" {
+		start = "HEAD"
+	}
+	reused, err = git.WorktreeAdd(repoPath, worktreePath, git.WorktreeAddOptions{Branch: branchName, Start: start})
 	if err != nil {
 		return "", false, err
 	}
@@ -81,13 +86,8 @@ func CreateSymlink(target, sessionPath string) (string, error) {
 	return linkPath, nil
 }
 
-// removeWorktree unregisters a worktree from its main repo.
-//
-// One --force discards local changes. force adds the second --force that git
-// demands before it will remove a locked worktree; without it a single locked
-// worktree leaves both the registration and the branch behind.
 func removeWorktree(mainRepoPath, worktreePath string, force bool) error {
-	level := 1
+	level := 0
 	if force {
 		level = 2
 	}
@@ -110,7 +110,7 @@ func removeWorktree(mainRepoPath, worktreePath string, force bool) error {
 func worktreeRegistered(mainRepoPath, worktreePath string) bool {
 	trees, err := git.Worktrees(mainRepoPath)
 	if err != nil {
-		return false
+		return true
 	}
 	target := realPath(worktreePath)
 	for _, tree := range trees {
@@ -186,53 +186,6 @@ func retargetBranchRecords(sessionPath, oldName, newName string) {
 	}
 }
 
-// branchesToDelete decides which branches go with the worktree at entryPath.
-//
-// The checked-out branch is read first: when its back-pointer names this
-// session it is the one seshy created, whatever else the user did since.
-// Otherwise every branch recorded for the session that no other worktree has
-// checked out is seshy's, which is what makes a detached tree still drop its
-// branch. Sessions from before the back-pointer existed have no record at all,
-// and for them HEAD is the only evidence of what seshy created, so it is
-// deleted as it always was.
-func branchesToDelete(mainRepoPath, entryPath, session string) []string {
-	head, _ := git.Branch(entryPath)
-	if head == "HEAD" {
-		head = ""
-	}
-	if head != "" {
-		if owner, set, _ := git.ConfigGet(mainRepoPath, sessionKey(head)); set && owner == session {
-			return []string{head}
-		}
-	}
-
-	recorded := recordedBranches(mainRepoPath, session)
-	if len(recorded) == 0 {
-		// Legacy session: no record was ever written, so the checked-out branch
-		// is the only evidence of what seshy created.
-		if head == "" {
-			return nil
-		}
-		return []string{head}
-	}
-
-	elsewhere := map[string]bool{}
-	if trees, err := git.Worktrees(mainRepoPath); err == nil {
-		for _, tree := range trees {
-			if tree.Branch != "" && realPath(tree.Path) != realPath(entryPath) {
-				elsewhere[strings.TrimPrefix(tree.Branch, "refs/heads/")] = true
-			}
-		}
-	}
-	var branches []string
-	for _, branch := range recorded {
-		if !elsewhere[branch] {
-			branches = append(branches, branch)
-		}
-	}
-	return branches
-}
-
 // errStandaloneClone marks a session entry that is a repository of its own
 // rather than a worktree registered elsewhere. git worktree remove would
 // refuse it, so the caller deletes the directory instead.
@@ -250,30 +203,10 @@ func teardownWorktree(entryPath string, force bool) error {
 		return errStandaloneClone
 	}
 
-	// The session is the directory the entry sits in, for archived and live
-	// sessions alike.
-	branches := branchesToDelete(mainRepoPath, entryPath, filepath.Base(filepath.Dir(entryPath)))
-
-	if err := removeWorktree(mainRepoPath, entryPath, force); err != nil {
-		return fmt.Errorf("failed to remove worktree: %w", err)
-	}
-
-	mainBranch, _ := git.Branch(mainRepoPath)
-	var errs []error
-	for _, branch := range branches {
-		// The main worktree may sit on the same branch; git refuses to delete a
-		// checked-out branch and the user did not ask us to move it.
-		if branch == mainBranch {
-			continue
-		}
-		if err := git.Run(mainRepoPath, "branch", "-D", branch); err != nil {
-			errs = append(errs, fmt.Errorf("failed to delete branch %s: %w", branch, err))
-		}
-	}
-	return errors.Join(errs...)
+	return removeWorktree(mainRepoPath, entryPath, force)
 }
 
-// CleanupWorktrees removes all git worktrees in a session directory and deletes their branches.
+// CleanupWorktrees removes worktrees and preserves their branches.
 // Continues on individual failures and returns a combined error if any worktree could not be removed.
 // force is passed through to worktree removal so locked worktrees can be torn down.
 func CleanupWorktrees(sessionPath string, force bool) error {
@@ -294,8 +227,7 @@ func CleanupWorktrees(sessionPath string, force bool) error {
 			continue
 		}
 
-		// A standalone clone is removed with the session directory itself.
-		if err := teardownWorktree(entryPath, force); err != nil && !errors.Is(err, errStandaloneClone) {
+		if err := teardownWorktree(entryPath, force); err != nil && !(force && errors.Is(err, errStandaloneClone)) {
 			errs = append(errs, fmt.Errorf("%s: %w", entry.Name(), err))
 		}
 	}
@@ -304,7 +236,7 @@ func CleanupWorktrees(sessionPath string, force bool) error {
 }
 
 // RemoveRepoEntry removes a single repo entry from a session directory.
-// For git worktrees: removes the worktree and deletes the branch.
+// Worktree removal preserves branches.
 // For symlinks: removes the symlink.
 // force is passed through to worktree removal so locked worktrees can be removed.
 func RemoveRepoEntry(sessionPath, repoName string, force bool) error {
@@ -327,7 +259,7 @@ func RemoveRepoEntry(sessionPath, repoName string, force bool) error {
 	}
 
 	err = teardownWorktree(entryPath, force)
-	if errors.Is(err, errStandaloneClone) {
+	if force && errors.Is(err, errStandaloneClone) {
 		return os.RemoveAll(entryPath)
 	}
 	return err

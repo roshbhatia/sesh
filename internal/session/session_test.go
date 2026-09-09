@@ -195,7 +195,7 @@ func TestCreateWorktree(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sessions", "my-session")
 	os.MkdirAll(sessionDir, 0755)
 
-	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "sy/my-session/testrepo")
+	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "sy/my-session/testrepo", CreateOpts{})
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -218,7 +218,7 @@ func TestCreateWorktreeNonGitRepo(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sess")
 	os.MkdirAll(sessionDir, 0755)
 
-	_, _, err := CreateWorktree(plain, sessionDir, "sy/sess/plain")
+	_, _, err := CreateWorktree(plain, sessionDir, "sy/sess/plain", CreateOpts{})
 	if err == nil {
 		t.Error("expected error when source is not a git repo")
 	}
@@ -234,7 +234,7 @@ func TestCreateWorktreeOnSessionBranch(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sessions", "feat")
 	os.MkdirAll(sessionDir, 0755)
 
-	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "sy/feat/testrepo")
+	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "sy/feat/testrepo", CreateOpts{})
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -268,7 +268,7 @@ func TestCreateWorktreeDoesNotClobberMain(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sessions", "test")
 	os.MkdirAll(sessionDir, 0755)
 
-	_, _, err = CreateWorktree(repoDir, sessionDir, "test")
+	_, _, err = CreateWorktree(repoDir, sessionDir, "test", CreateOpts{})
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -296,7 +296,7 @@ func TestCreateWorktreeSucceedsWhenBranchCheckedOutElsewhere(t *testing.T) {
 	os.MkdirAll(sessionDir2, 0755)
 
 	// Create first worktree — its branch is checked out
-	wt1, _, err := CreateWorktree(repoDir, sessionDir1, "sess1")
+	wt1, _, err := CreateWorktree(repoDir, sessionDir1, "sess1", CreateOpts{})
 	if err != nil {
 		t.Fatalf("first CreateWorktree: %v", err)
 	}
@@ -305,7 +305,7 @@ func TestCreateWorktreeSucceedsWhenBranchCheckedOutElsewhere(t *testing.T) {
 	}
 
 	// Create second worktree — should succeed despite first having source branch checked out
-	wt2, _, err := CreateWorktree(repoDir, sessionDir2, "sess2")
+	wt2, _, err := CreateWorktree(repoDir, sessionDir2, "sess2", CreateOpts{})
 	if err != nil {
 		t.Fatalf("second CreateWorktree: %v (source branch already checked out in %s)", err, wt1)
 	}
@@ -375,7 +375,7 @@ func TestCleanupWorktrees(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "session")
 	os.MkdirAll(sessionDir, 0755)
 
-	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "test")
+	worktreePath, _, err := CreateWorktree(repoDir, sessionDir, "test", CreateOpts{})
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -428,7 +428,7 @@ func TestListRepoSources(t *testing.T) {
 	os.MkdirAll(sessionDir, 0755)
 
 	// Create a worktree and a symlink
-	_, _, err := CreateWorktree(repoDir, sessionDir, "test")
+	_, _, err := CreateWorktree(repoDir, sessionDir, "test", CreateOpts{})
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -975,7 +975,7 @@ func TestListRepoCountEmptySession(t *testing.T) {
 // Branch cleanup on delete
 // ---------------------------------------------------------------------------
 
-func TestDeleteCleansBranches(t *testing.T) {
+func TestDeletePreservesBranches(t *testing.T) {
 	isolatedRoot(t)
 	tmp := t.TempDir()
 
@@ -996,10 +996,10 @@ func TestDeleteCleansBranches(t *testing.T) {
 		t.Fatalf("Delete: %v", err)
 	}
 
-	// Verify branch is cleaned up
+	// Removing a worktree must not delete its branch.
 	branches, _ = git.Output(repoDir, "branch", "--list", "sy/branch-cleanup/*")
-	if strings.TrimSpace(branches) != "" {
-		t.Errorf("expected branch to be deleted after session delete, still found: %q", branches)
+	if strings.TrimSpace(branches) == "" {
+		t.Errorf("session deletion removed its branch: %q", branches)
 	}
 }
 
@@ -1051,7 +1051,7 @@ func TestCreateWorktreeReusesExistingBranch(t *testing.T) {
 	sessionDir := filepath.Join(tmp, "sessions", "reuse")
 	os.MkdirAll(sessionDir, 0755)
 
-	worktreePath, reused, err := CreateWorktree(repoDir, sessionDir, "sy/reuse/testrepo")
+	worktreePath, reused, err := CreateWorktree(repoDir, sessionDir, "sy/reuse/testrepo", CreateOpts{ExistingBranch: true})
 	if err != nil {
 		t.Fatalf("CreateWorktree: %v", err)
 	}
@@ -1063,7 +1063,7 @@ func TestCreateWorktreeReusesExistingBranch(t *testing.T) {
 		t.Errorf("branch = %q, want sy/reuse/testrepo", branch)
 	}
 
-	_, reused, err = CreateWorktree(repoDir, filepath.Join(tmp, "sessions", "fresh"), "sy/fresh/testrepo")
+	_, reused, err = CreateWorktree(repoDir, filepath.Join(tmp, "sessions", "fresh"), "sy/fresh/testrepo", CreateOpts{})
 	if err != nil {
 		t.Fatalf("CreateWorktree fresh: %v", err)
 	}
@@ -1158,7 +1158,7 @@ func TestCreateRecordsReusedBranch(t *testing.T) {
 	if err := git.Run(repoDir, "branch", "sy/again/repo"); err != nil {
 		t.Fatalf("branch: %v", err)
 	}
-	if _, err := Create("again", []string{repoDir}, defaultOpts()); err != nil {
+	if _, err := Create("again", []string{repoDir}, CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}", ExistingBranch: true}); err != nil {
 		t.Fatalf("Create: %v", err)
 	}
 	if v, set, _ := git.ConfigGet(repoDir, "branch.sy/again/repo.seshy-reused"); !set || v != "true" {
@@ -1166,9 +1166,9 @@ func TestCreateRecordsReusedBranch(t *testing.T) {
 	}
 }
 
-// TestDeleteDropsBranchOfDetachedWorktree is the case the back-pointer exists
+// TestDeletePreservesBranchOfDetachedWorktree is the case the back-pointer exists
 // for: HEAD no longer names the branch, so only the record can.
-func TestDeleteDropsBranchOfDetachedWorktree(t *testing.T) {
+func TestDeletePreservesBranchOfDetachedWorktree(t *testing.T) {
 	isolatedRoot(t)
 	repoDir := filepath.Join(t.TempDir(), "repo")
 	setupTestGitRepo(t, repoDir)
@@ -1187,8 +1187,8 @@ func TestDeleteDropsBranchOfDetachedWorktree(t *testing.T) {
 	if err := Delete("det", false); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if branchExists(t, repoDir, "sy/det/repo") {
-		t.Error("branch of the detached worktree survived delete")
+	if !branchExists(t, repoDir, "sy/det/repo") {
+		t.Error("delete removed the detached branch")
 	}
 }
 
@@ -1212,14 +1212,14 @@ func TestDeleteKeepsBranchTheUserSwitchedTo(t *testing.T) {
 	if !branchExists(t, repoDir, "mine") {
 		t.Error("delete removed a branch seshy did not create")
 	}
-	if branchExists(t, repoDir, "sy/sw/repo") {
-		t.Error("delete left the recorded seshy branch behind")
+	if !branchExists(t, repoDir, "sy/sw/repo") {
+		t.Error("delete removed the recorded branch")
 	}
 }
 
-// TestDeleteLegacySessionFallsBackToHead covers sessions created before the
+// TestDeleteLegacySessionPreservesHeadBranch covers sessions created before the
 // back-pointer existed: with no record, HEAD is still what gets deleted.
-func TestDeleteLegacySessionFallsBackToHead(t *testing.T) {
+func TestDeleteLegacySessionPreservesHeadBranch(t *testing.T) {
 	isolatedRoot(t)
 	repoDir := filepath.Join(t.TempDir(), "repo")
 	setupTestGitRepo(t, repoDir)
@@ -1233,8 +1233,8 @@ func TestDeleteLegacySessionFallsBackToHead(t *testing.T) {
 	if err := Delete("old", false); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if branchExists(t, repoDir, "sy/old/repo") {
-		t.Error("legacy delete left the checked-out branch behind")
+	if !branchExists(t, repoDir, "sy/old/repo") {
+		t.Error("delete removed the legacy branch")
 	}
 }
 
@@ -1260,12 +1260,12 @@ func TestRenameRetargetsBranchRecords(t *testing.T) {
 	if err := Delete("after", false); err != nil {
 		t.Fatalf("Delete: %v", err)
 	}
-	if branchExists(t, repoDir, "sy/before/repo") {
-		t.Error("renamed session did not drop its detached branch")
+	if !branchExists(t, repoDir, "sy/before/repo") {
+		t.Error("delete removed the renamed group branch")
 	}
 }
 
-func TestRemoveRepoEntryDetachedDropsBranch(t *testing.T) {
+func TestRemoveRepoEntryDetachedPreservesBranch(t *testing.T) {
 	isolatedRoot(t)
 	repoDir := filepath.Join(t.TempDir(), "repo")
 	setupTestGitRepo(t, repoDir)
@@ -1279,7 +1279,7 @@ func TestRemoveRepoEntryDetachedDropsBranch(t *testing.T) {
 	if err := RemoveRepoEntry(sessionPath, "repo", false); err != nil {
 		t.Fatalf("RemoveRepoEntry: %v", err)
 	}
-	if branchExists(t, repoDir, "sy/rm-det/repo") {
-		t.Error("remove left the detached entry's branch behind")
+	if !branchExists(t, repoDir, "sy/rm-det/repo") {
+		t.Error("remove deleted the detached branch")
 	}
 }

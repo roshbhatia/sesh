@@ -397,8 +397,8 @@ func TestDeleteForceRemovesLockedWorktree(t *testing.T) {
 	if err != nil {
 		t.Fatalf("branch list: %v", err)
 	}
-	if strings.TrimSpace(string(branches)) != "" {
-		t.Errorf("branch not deleted after --force: %q", branches)
+	if strings.TrimSpace(string(branches)) == "" {
+		t.Errorf("--force deleted the branch: %q", branches)
 	}
 }
 

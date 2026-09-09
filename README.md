@@ -63,6 +63,9 @@ sy add <name> [repos...] [flags]
 | Option | Description |
 | --- | --- |
 | `--branch`, `-b` `<value>` | Override branch name for all worktrees |
+| `--existing` | Check out the existing branch named by --branch |
+| `--reference` | Link existing directories without creating worktrees |
+| `--start-point` `<value>` | Commit to start a new branch from (default HEAD) |
 | `--stdin` | Read repo paths from stdin |
 
 ### `sy archive`
@@ -180,6 +183,9 @@ sy new <name> [repos...] [flags]
 | --- | --- |
 | `--branch`, `-b` `<value>` | Override branch name for all worktrees |
 | `--empty` | Create the session with no repositories |
+| `--existing` | Check out the existing branch named by --branch |
+| `--reference` | Link existing directories without creating worktrees |
+| `--start-point` `<value>` | Commit to start a new branch from (default HEAD) |
 | `--stdin` | Read repo paths from stdin |
 
 ### `sy open`
@@ -389,6 +395,17 @@ Two other paths create an empty session instead of prompting:
 
 Non-git directories are always supported. Seshy symlinks them into the session
 instead of creating a worktree, and `sy status` marks them `(symlink)`.
+
+Use `sy add <group> --reference <directory>` to include an existing checkout without creating a branch.
+Removing that member removes only the link.
+
+`sy delete` and `sy remove` retain branches and refuse dirty worktrees unless `--force` is explicit.
+`sy prune` uses Git's merged-branch check and refuses unmerged branches.
+Use Git directly for branch deletion.
+
+New branches start at `HEAD`, or at the commit supplied through `--start-point`.
+Use `--existing --branch <name>` to select an existing branch.
+Without `--existing`, an existing branch name is an error.
 
 ## Branch Naming
 
