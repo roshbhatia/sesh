@@ -72,6 +72,17 @@ func runPicker(command string, input []string) ([]string, error) {
 	return result, nil
 }
 
+// skipConfirm reports whether a destructive command may skip its prompt. Both
+// --yes and --force skip it; --force also overrides a cleanup failure, so when
+// a caller passed --force it is told once that --yes alone would skip the
+// prompt without forcing.
+func skipConfirm(yes, force bool) bool {
+	if force {
+		ui.Diagnostic(os.Stderr, "warning", "--force implies --yes; pass --yes to skip the prompt without forcing")
+	}
+	return yes || force
+}
+
 // confirm asks question on stderr and reads one line from stdin. force skips
 // the question. When stdin is not a terminal there is no one to answer, so
 // confirm refuses instead of reading EOF as "no" and exiting 0 with nothing

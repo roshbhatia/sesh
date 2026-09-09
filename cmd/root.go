@@ -15,7 +15,10 @@ import (
 
 const version = "4.2.0"
 
-var greedyQuery string
+var (
+	greedyQuery string
+	configPath  string
+)
 
 // preRunReached records that cobra finished parsing flags and validating
 // arguments for the invoked command. An error returned before that point is a
@@ -33,6 +36,7 @@ var rootCmd = &cobra.Command{
 	SilenceUsage:  true,
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		preRunReached = true
+		config.SetPath(configPath)
 		if cmd == configEditCmd || cmd == configInitCmd {
 			return nil
 		}
@@ -163,4 +167,5 @@ func init() {
 	rootCmd.SetVersionTemplate(fmt.Sprintf("sy version %s\n", version))
 	rootCmd.SetUsageTemplate(rootCmd.UsageTemplate() + rootUsageSections)
 	rootCmd.Flags().StringVar(&greedyQuery, "greedy", "", "Fuzzy-match a session name and print its path")
+	rootCmd.PersistentFlags().StringVar(&configPath, "config", "", "Config file, instead of $SESHY_CONFIG or $XDG_CONFIG_HOME/seshy/config.yaml")
 }

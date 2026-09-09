@@ -53,6 +53,7 @@ sy [flags]
 
 | Option | Description |
 | --- | --- |
+| `--config` `<value>` | Config file, instead of $SESHY_CONFIG or $XDG_CONFIG_HOME/seshy/config.yaml |
 | `--greedy` `<value>` | Fuzzy-match a session name and print its path |
 
 ### `sy add`
@@ -128,6 +129,7 @@ sy delete [name] [flags]
 | --- | --- |
 | `--archived` | Delete an archived session instead of an active one |
 | `--force`, `-f` | Skip confirmation and delete even if worktree cleanup fails |
+| `--yes`, `-y` | Skip the confirmation prompt |
 
 ### `sy help`
 
@@ -233,7 +235,8 @@ sy remove <session> <repo> [flags]
 
 | Option | Description |
 | --- | --- |
-| `--force`, `-f` | Skip confirmation prompt |
+| `--force`, `-f` | Skip confirmation prompt and remove even if worktree cleanup fails |
+| `--yes`, `-y` | Skip the confirmation prompt |
 
 ### `sy rename`
 

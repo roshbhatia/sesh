@@ -87,6 +87,8 @@ _sy_complete() {
       continue
     fi
     case "$context:$word" in
+      ':--config') consume_value=1; continue ;;
+      ':--config='*) continue ;;
       ':--greedy') consume_value=1; continue ;;
       ':--greedy='*) continue ;;
       'add:--branch') consume_value=1; continue ;;
@@ -138,7 +140,7 @@ _sy_complete() {
   case "$context" in
     '')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'prune' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive' '--greedy'
+        printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'prune' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive' '--config' '--greedy'
         __sy_completion_values_0
       )
       ;;
@@ -183,7 +185,7 @@ _sy_complete() {
       ;;
     'delete')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' '--archived' '--force' '-f'
+        printf '%s\n' '--archived' '--force' '-f' '--yes' '-y'
         __sy_completion_values_4
       )
       ;;
@@ -229,7 +231,7 @@ _sy_complete() {
       ;;
     'remove')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' '--force' '-f'
+        printf '%s\n' '--force' '-f' '--yes' '-y'
         __sy_completion_values_9
       )
       ;;

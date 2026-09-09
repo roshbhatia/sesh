@@ -102,6 +102,8 @@ _sy() {
       continue
     fi
     case "$context:$word" in
+      ':--config') consume_value=1; continue ;;
+      ':--config='*) continue ;;
       ':--greedy') consume_value=1; continue ;;
       ':--greedy='*) continue ;;
       'add:--branch') consume_value=1; continue ;;
@@ -149,6 +151,7 @@ _sy() {
   case "$context" in
     '')
       _arguments \
+        '--config[Config file, instead of $SESHY_CONFIG or $XDG_CONFIG_HOME/seshy/config.yaml]:value:' \
         '--greedy[Fuzzy-match a session name and print its path]:value:' \
         '*:argument:__sy_completion_values_0'
 
@@ -200,6 +203,7 @@ _sy() {
       _arguments \
         '--archived[Delete an archived session instead of an active one]' \
         '(-f)--force[Skip confirmation and delete even if worktree cleanup fails]' \
+        '(-y)--yes[Skip the confirmation prompt]' \
         '*:argument:__sy_completion_values_4'
 
       ;;
@@ -255,7 +259,8 @@ _sy() {
       ;;
     'remove')
       _arguments \
-        '(-f)--force[Skip confirmation prompt]' \
+        '(-f)--force[Skip confirmation prompt and remove even if worktree cleanup fails]' \
+        '(-y)--yes[Skip the confirmation prompt]' \
         '*:argument:__sy_completion_values_9'
 
       ;;

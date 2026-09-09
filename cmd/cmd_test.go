@@ -72,7 +72,11 @@ func runCmd(args ...string) (stdout, stderr string, err error) {
 
 	// Reset persistent flags before each run
 	greedyQuery = ""
+	configPath = ""
 	forceDelete = false
+	yesDelete = false
+	forceRemove = false
+	yesRemove = false
 	deleteArchived = false
 	listArchived = false
 	listFormat = ""
