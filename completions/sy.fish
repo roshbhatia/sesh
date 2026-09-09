@@ -2,7 +2,7 @@ complete -c sy -e
 complete -c sy -f
 function __sy_completion_values_0
   begin
-    printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'path' 'remove' 'rename' 'status' 'switch' 'unarchive'
+    printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'remove' 'rename' 'status' 'switch' 'unarchive'
     command 'sy' '__values' 'active' (commandline -cp) 2>/dev/null; or true
   end | string match -rv '\t'; or true
 end
@@ -43,12 +43,12 @@ function __sy_completion_values_7
 end
 function __sy_completion_values_8
   begin
-    command 'sy' '__values' 'remove' (commandline -cp) 2>/dev/null; or true
+    command 'sy' '__values' 'active' (commandline -cp) 2>/dev/null; or true
   end | string match -rv '\t'; or true
 end
 function __sy_completion_values_9
   begin
-    command 'sy' '__values' 'active' (commandline -cp) 2>/dev/null; or true
+    command 'sy' '__values' 'remove' (commandline -cp) 2>/dev/null; or true
   end | string match -rv '\t'; or true
 end
 function __sy_completion_values_10
@@ -62,6 +62,11 @@ function __sy_completion_values_11
   end | string match -rv '\t'; or true
 end
 function __sy_completion_values_12
+  begin
+    command 'sy' '__values' 'active' (commandline -cp) 2>/dev/null; or true
+  end | string match -rv '\t'; or true
+end
+function __sy_completion_values_13
   begin
     command 'sy' '__values' 'archived' (commandline -cp) 2>/dev/null; or true
   end | string match -rv '\t'; or true
@@ -109,6 +114,11 @@ function __sy_completion_context
         continue
       case 'new:-b=*'
         continue
+      case 'open:--format'
+        set consume_value 1
+        continue
+      case 'open:--format=*'
+        continue
     end
     switch "$context:$word"
       case ':completion'
@@ -137,6 +147,8 @@ function __sy_completion_context
         set context 'list'
       case ':new'
         set context 'new'
+      case ':open'
+        set context 'open'
       case ':path'
         set context 'path'
       case ':remove'
@@ -165,6 +177,7 @@ complete -c sy -f -n 'test (__sy_completion_context) = ""' -a help -d 'sy help [
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a init -d 'sy init <shell>'
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a list -d 'sy list [flags]'
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a new -d 'sy new <name> [repos...] [flags]'
+complete -c sy -f -n 'test (__sy_completion_context) = ""' -a open -d 'sy open <name> [flags]'
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a path -d 'sy path <name>'
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a remove -d 'sy remove <session> <repo> [flags]'
 complete -c sy -f -n 'test (__sy_completion_context) = ""' -a rename -d 'sy rename <old-name> <new-name>'
@@ -195,11 +208,13 @@ complete -c sy -n 'test (__sy_completion_context) = "new"' -l branch -s b -r -d 
 complete -c sy -n 'test (__sy_completion_context) = "new"' -l empty -d 'Create the session with no repositories'
 complete -c sy -n 'test (__sy_completion_context) = "new"' -l stdin -d 'Read repo paths from stdin'
 complete -c sy -f -n 'test (__sy_completion_context) = "new"' -a '(__sy_completion_values_6)'
-complete -c sy -f -n 'test (__sy_completion_context) = "path"' -a '(__sy_completion_values_7)'
+complete -c sy -n 'test (__sy_completion_context) = "open"' -l format -r -d 'Output format: table, json'
+complete -c sy -f -n 'test (__sy_completion_context) = "open"' -a '(__sy_completion_values_7)'
+complete -c sy -f -n 'test (__sy_completion_context) = "path"' -a '(__sy_completion_values_8)'
 complete -c sy -n 'test (__sy_completion_context) = "remove"' -l force -s f -d 'Skip confirmation prompt'
-complete -c sy -f -n 'test (__sy_completion_context) = "remove"' -a '(__sy_completion_values_8)'
-complete -c sy -f -n 'test (__sy_completion_context) = "rename"' -a '(__sy_completion_values_9)'
-complete -c sy -f -n 'test (__sy_completion_context) = "status"' -a '(__sy_completion_values_10)'
+complete -c sy -f -n 'test (__sy_completion_context) = "remove"' -a '(__sy_completion_values_9)'
+complete -c sy -f -n 'test (__sy_completion_context) = "rename"' -a '(__sy_completion_values_10)'
+complete -c sy -f -n 'test (__sy_completion_context) = "status"' -a '(__sy_completion_values_11)'
 complete -c sy -n 'test (__sy_completion_context) = "switch"' -l name -d 'Print the resolved name instead of the path'
-complete -c sy -f -n 'test (__sy_completion_context) = "switch"' -a '(__sy_completion_values_11)'
-complete -c sy -f -n 'test (__sy_completion_context) = "unarchive"' -a '(__sy_completion_values_12)'
+complete -c sy -f -n 'test (__sy_completion_context) = "switch"' -a '(__sy_completion_values_12)'
+complete -c sy -f -n 'test (__sy_completion_context) = "unarchive"' -a '(__sy_completion_values_13)'

@@ -174,6 +174,21 @@ sy new <name> [repos...] [flags]
 | `--empty` | Create the session with no repositories |
 | `--stdin` | Read repo paths from stdin |
 
+### `sy open`
+
+sy open <name> [flags]
+
+Print the session directory, or with --format json the seshy.open/v1 plan a
+launcher runs to enter the session: its cwd, an empty command for the caller's
+default program, and SESHY_SESSION in the environment.
+
+The name is matched exactly, or given as the seshy:<name> id a listing
+printed. A session that no longer exists exits 3.
+
+| Option | Description |
+| --- | --- |
+| `--format` `<value>` | Output format: table, json |
+
 ### `sy path`
 
 sy path <name>

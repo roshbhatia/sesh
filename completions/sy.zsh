@@ -1,7 +1,7 @@
 #compdef sy
 __sy_completion_values_0() {
   local -a values
-  values=( 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'path' 'remove' 'rename' 'status' 'switch' 'unarchive')
+  values=( 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'remove' 'rename' 'status' 'switch' 'unarchive')
   values+=("${(@f)$('sy' '__values' 'active' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
   compadd -a values
 }
@@ -50,13 +50,13 @@ __sy_completion_values_7() {
 __sy_completion_values_8() {
   local -a values
   values=()
-  values+=("${(@f)$('sy' '__values' 'remove' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
+  values+=("${(@f)$('sy' '__values' 'active' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
   compadd -a values
 }
 __sy_completion_values_9() {
   local -a values
   values=()
-  values+=("${(@f)$('sy' '__values' 'active' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
+  values+=("${(@f)$('sy' '__values' 'remove' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
   compadd -a values
 }
 __sy_completion_values_10() {
@@ -72,6 +72,12 @@ __sy_completion_values_11() {
   compadd -a values
 }
 __sy_completion_values_12() {
+  local -a values
+  values=()
+  values+=("${(@f)$('sy' '__values' 'active' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
+  compadd -a values
+}
+__sy_completion_values_13() {
   local -a values
   values=()
   values+=("${(@f)$('sy' '__values' 'archived' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
@@ -108,6 +114,8 @@ _sy() {
       'new:--branch='*) continue ;;
       'new:-b') consume_value=1; continue ;;
       'new:-b='*) continue ;;
+      'open:--format') consume_value=1; continue ;;
+      'open:--format='*) continue ;;
     esac
     case "$context:$word" in
       ':completion') context='completion' ;;
@@ -123,6 +131,7 @@ _sy() {
       ':init') context='init' ;;
       ':list') context='list' ;;
       ':new') context='new' ;;
+      ':open') context='open' ;;
       ':path') context='path' ;;
       ':remove') context='remove' ;;
       ':rename') context='rename' ;;
@@ -216,36 +225,42 @@ _sy() {
         '*:argument:__sy_completion_values_6'
 
       ;;
+    'open')
+      _arguments \
+        '--format[Output format: table, json]:value:' \
+        '*:argument:__sy_completion_values_7'
+
+      ;;
     'path')
       _arguments \
-        '*:argument:__sy_completion_values_7'
+        '*:argument:__sy_completion_values_8'
 
       ;;
     'remove')
       _arguments \
         '(-f)--force[Skip confirmation prompt]' \
-        '*:argument:__sy_completion_values_8'
+        '*:argument:__sy_completion_values_9'
 
       ;;
     'rename')
       _arguments \
-        '*:argument:__sy_completion_values_9'
+        '*:argument:__sy_completion_values_10'
 
       ;;
     'status')
       _arguments \
-        '*:argument:__sy_completion_values_10'
+        '*:argument:__sy_completion_values_11'
 
       ;;
     'switch')
       _arguments \
         '--name[Print the resolved name instead of the path]' \
-        '*:argument:__sy_completion_values_11'
+        '*:argument:__sy_completion_values_12'
 
       ;;
     'unarchive')
       _arguments \
-        '*:argument:__sy_completion_values_12'
+        '*:argument:__sy_completion_values_13'
 
       ;;
   esac

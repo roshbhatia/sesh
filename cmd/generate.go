@@ -210,7 +210,7 @@ func decorateCompletion(command *completion.Command, parent []string) {
 	switch joined {
 	case "add":
 		command.CompletionCommand = valuesInvocation("add")
-	case "archive", "attach", "path", "rename", "status", "switch":
+	case "archive", "attach", "open", "path", "rename", "status", "switch":
 		command.CompletionCommand = valuesInvocation("active")
 	case "delete":
 		command.CompletionCommand = valuesInvocation("sessions")
