@@ -63,6 +63,12 @@ func runCmd(args ...string) (stdout, stderr string, err error) {
 		panic(pipeErr)
 	}
 	os.Stdout = w
+	origStderr := os.Stderr
+	er, ew, pipeErr := os.Pipe()
+	if pipeErr != nil {
+		panic(pipeErr)
+	}
+	os.Stderr = ew
 
 	// Reset persistent flags before each run
 	greedyQuery = ""
@@ -78,11 +84,15 @@ func runCmd(args ...string) (stdout, stderr string, err error) {
 
 	w.Close()
 	os.Stdout = origStdout
+	ew.Close()
+	os.Stderr = origStderr
 
-	var buf bytes.Buffer
+	var buf, errBuf bytes.Buffer
 	buf.ReadFrom(r)
 	r.Close()
-	return buf.String(), "", err
+	errBuf.ReadFrom(er)
+	er.Close()
+	return buf.String(), errBuf.String(), err
 }
 
 // ---------------------------------------------------------------------------
@@ -188,14 +198,19 @@ func TestGreedyMatchReturnsPointerToSliceElement(t *testing.T) {
 // list command
 // ---------------------------------------------------------------------------
 
+// TestListCommandNoSessions: the advice for an empty list is not data, so a
+// piped "sy list" stays empty and the prose goes to stderr.
 func TestListCommandNoSessions(t *testing.T) {
 	isolatedRoot(t)
-	stdout, _, err := runCmd("list")
+	stdout, stderr, err := runCmd("list")
 	if err != nil {
 		t.Fatalf("list: %v", err)
 	}
-	if !strings.Contains(stdout, "No sessions") {
-		t.Errorf("expected 'No sessions' message, got: %q", stdout)
+	if stdout != "" {
+		t.Errorf("expected empty stdout for an empty list, got: %q", stdout)
+	}
+	if !strings.Contains(stderr, "No sessions") {
+		t.Errorf("expected 'No sessions' message on stderr, got: %q", stderr)
 	}
 }
 
@@ -220,12 +235,12 @@ func TestListCommandShowsSessions(t *testing.T) {
 
 func TestListAlias(t *testing.T) {
 	isolatedRoot(t)
-	stdout, _, err := runCmd("ls")
+	_, stderr, err := runCmd("ls")
 	if err != nil {
 		t.Fatalf("ls: %v", err)
 	}
-	if !strings.Contains(stdout, "No sessions") {
-		t.Errorf("expected 'No sessions' from ls alias, got: %q", stdout)
+	if !strings.Contains(stderr, "No sessions") {
+		t.Errorf("expected 'No sessions' from ls alias, got: %q", stderr)
 	}
 }
 
@@ -1005,5 +1020,63 @@ func TestDeleteForceSkipsPrompt(t *testing.T) {
 	}
 	if session.Exists("gone") {
 		t.Error("--force did not delete the session")
+	}
+}
+
+// TestPrintSessionListPipedBytes pins the plain shape consumers parse: a
+// two-space gutter, columns padded to the widest cell, no trailing padding.
+func TestPrintSessionListPipedBytes(t *testing.T) {
+	ui.SetStdoutColorsEnabled(false)
+	now := time.Now()
+	sessions := []session.Session{
+		{Name: "my-session", RepoCount: 1, LastModified: now},
+		{Name: "sh", RepoCount: 12, LastModified: now},
+	}
+
+	origStdout := os.Stdout
+	r, w, _ := os.Pipe()
+	os.Stdout = w
+	err := printSessionList(sessions, "", "none")
+	w.Close()
+	os.Stdout = origStdout
+	if err != nil {
+		t.Fatalf("printSessionList: %v", err)
+	}
+	var buf bytes.Buffer
+	buf.ReadFrom(r)
+	r.Close()
+
+	want := "SESSION     REPOS  MODIFIED\n" +
+		"my-session  1      just now\n" +
+		"sh          12     just now\n"
+	if buf.String() != want {
+		t.Errorf("piped list bytes changed:\n got %q\nwant %q", buf.String(), want)
+	}
+}
+
+// TestStatusPipedHasNoEscapes: the status table used to color by stderr's
+// TTY-ness, so "sy status | cat -A" showed escapes.
+func TestStatusPipedHasNoEscapes(t *testing.T) {
+	isolatedRoot(t)
+	tmp := t.TempDir()
+	repo := filepath.Join(tmp, "r")
+	setupGitRepo(t, repo)
+	if _, err := session.Create("plain", []string{repo}, session.CreateOpts{BranchFormat: "sy/{{.Session}}/{{.Repo}}"}); err != nil {
+		t.Fatalf("create: %v", err)
+	}
+	ui.SetColorsEnabled(true)
+	defer ui.SetColorsEnabled(false)
+
+	stdout, _, err := runCmd("status", "plain")
+	if err != nil {
+		t.Fatalf("status: %v", err)
+	}
+	if strings.Contains(stdout, "\033[") {
+		t.Errorf("piped status carries ANSI escapes: %q", stdout)
+	}
+	for _, want := range []string{"session  plain", "NAME  BRANCH", "r     sy/plain/r"} {
+		if !strings.Contains(stdout, want) {
+			t.Errorf("status output lacks %q:\n%s", want, stdout)
+		}
 	}
 }

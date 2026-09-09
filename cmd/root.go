@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"fmt"
+	"os"
 	"strings"
 
 	"github.com/roshbhatia/go-utils/ui"
@@ -74,46 +75,18 @@ func printSessionList(sessions []session.Session, format, empty string) error {
 		return nil
 	}
 
-	// Default: human-readable table
+	// Default: human-readable table. The prose for an empty list is advice,
+	// not data, so it goes to stderr and a piped listing stays empty.
 	if len(sessions) == 0 {
-		fmt.Println(ui.Info(empty))
+		fmt.Fprintln(os.Stderr, ui.Info(empty))
 		return nil
 	}
 
-	// Calculate column widths
-	nameW, reposW := len("SESSION"), len("REPOS")
-	rows := make([]struct{ name, repos, modified string }, len(sessions))
+	rows := make([][]string, len(sessions))
 	for i, s := range sessions {
-		rows[i].name = s.Name
-		rows[i].repos = fmt.Sprintf("%d", s.RepoCount)
-		rows[i].modified = formatRelativeTime(s.LastModified)
-		if len(rows[i].name) > nameW {
-			nameW = len(rows[i].name)
-		}
-		if len(rows[i].repos) > reposW {
-			reposW = len(rows[i].repos)
-		}
+		rows[i] = []string{s.Name, fmt.Sprintf("%d", s.RepoCount), ui.StdoutFaint(formatRelativeTime(s.LastModified))}
 	}
-
-	// Pad before coloring. ANSI escapes have no display width, so a %-Ns verb
-	// applied to an already-colored string counts the escape bytes and drops
-	// the padding, which is what threw the header out of line with the rows.
-	fmt.Printf("%s  %s  %s\n",
-		ui.StdoutColor(ui.ColorPurple, pad("SESSION", nameW)),
-		ui.StdoutColor(ui.ColorPurple, pad("REPOS", reposW)),
-		ui.StdoutColor(ui.ColorPurple, "MODIFIED"))
-	for _, r := range rows {
-		fmt.Printf("%s  %s  %s\n", pad(r.name, nameW), pad(r.repos, reposW), ui.StdoutFaint(r.modified))
-	}
-	return nil
-}
-
-// pad right-pads s with spaces to width w.
-func pad(s string, w int) string {
-	if n := w - len(s); n > 0 {
-		return s + strings.Repeat(" ", n)
-	}
-	return s
+	return table(os.Stdout, []string{"SESSION", "REPOS", "MODIFIED"}, rows)
 }
 
 // greedyMatch returns the best session matching query: exact > prefix > substring (case-insensitive).

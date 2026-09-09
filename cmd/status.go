@@ -60,9 +60,14 @@ var statusCmd = &cobra.Command{
 
 		repos := session.GetSessionRepoInfos(sessionPath)
 
-		fmt.Printf("%-10s %s\n", ui.Faint("session"), ui.AccentBold(name))
-		fmt.Printf("%-10s %s\n", ui.Faint("path"), contractHome(sessionPath))
-		fmt.Printf("%-10s %d\n", ui.Faint("repos"), len(repos))
+		summary := [][]string{
+			{ui.StdoutFaint("session"), ui.StdoutColor(ui.ColorPurple, name)},
+			{ui.StdoutFaint("path"), contractHome(sessionPath)},
+			{ui.StdoutFaint("repos"), fmt.Sprintf("%d", len(repos))},
+		}
+		if err := table(os.Stdout, nil, summary); err != nil {
+			return err
+		}
 
 		if len(repos) == 0 {
 			return nil
@@ -70,33 +75,15 @@ var statusCmd = &cobra.Command{
 
 		fmt.Println()
 
-		nameW := len("NAME")
-		branchW := len("BRANCH")
-		for _, r := range repos {
-			if len(r.Name) > nameW {
-				nameW = len(r.Name)
-			}
-			label := branchLabel(r)
-			if len(label) > branchW {
-				branchW = len(label)
-			}
-		}
-
-		fmtStr := fmt.Sprintf("  %%-%ds  %%-%ds  %%s\n", nameW, branchW)
-		fmt.Printf(fmtStr,
-			ui.ANSIColor(ui.ColorPurple, "NAME"),
-			ui.ANSIColor(ui.ColorPurple, "BRANCH"),
-			ui.ANSIColor(ui.ColorPurple, "SOURCE"),
-		)
-		for _, r := range repos {
-			branchStr := ui.ANSIColor(ui.ColorPurple, r.Branch)
+		rows := make([][]string, len(repos))
+		for i, r := range repos {
+			branch := ui.StdoutColor(ui.ColorPurple, r.Branch)
 			if r.Branch == "" || r.Detached {
-				branchStr = ui.Faint(branchLabel(r))
+				branch = ui.StdoutFaint(branchLabel(r))
 			}
-			fmt.Printf(fmtStr, r.Name, branchStr, ui.Faint(contractHome(r.SourcePath)))
+			rows[i] = []string{"  " + r.Name, branch, ui.StdoutFaint(contractHome(r.SourcePath))}
 		}
-
-		return nil
+		return table(os.Stdout, []string{"  NAME", "BRANCH", "SOURCE"}, rows)
 	},
 }
 

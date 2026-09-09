@@ -129,9 +129,12 @@ scenario_basic_lifecycle() {
   local tmp="$1"
   local sess_root="$tmp/state/seshy/sessions"
 
-  # Start with no sessions
-  out=$(sy list)
+  # Start with no sessions. The advice goes to stderr; stdout stays empty for
+  # consumers that parse the table.
+  out=$(sy list 2>&1 >/dev/null)
   assert_contains "empty list" "$out" "No sessions"
+  out=$(sy list 2>/dev/null)
+  [ -z "$out" ] || die "empty list must print nothing on stdout, got $(printf '%q' "$out")"
 
   # Manually create a session dir (bypasses interactive picker)
   mkdir -p "$sess_root/my-feature"
@@ -153,7 +156,7 @@ scenario_basic_lifecycle() {
   assert_dir_missing "after delete" "$sess_root/my-feature"
 
   # List is empty again
-  out=$(sy list)
+  out=$(sy list 2>&1 >/dev/null)
   assert_contains "empty after delete" "$out" "No sessions"
 }
 
