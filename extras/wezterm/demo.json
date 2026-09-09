@@ -1,14 +1,14 @@
 {
   "name": "wezterm",
-  "summary": "Select a checkout group for token parser review",
+  "summary": "Open Seshy sessions from the WezTerm picker",
   "replay": false,
   "core": "seshy",
   "nix": "github:roshbhatia/seshy#provider-wezterm",
   "brew": "seshy-provider-wezterm",
   "binary": "seshy-picker",
   "dependencies": [
-    "python@3.13",
     "roshbhatia/tap/seshy"
   ],
-  "manifest_path": "share/wezterm/providers/seshy.json"
+  "manifest_path": "share/wezterm/providers/seshy.json",
+  "status": "pending"
 }

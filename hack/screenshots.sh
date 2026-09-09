@@ -44,23 +44,20 @@ export HOME
 export SESHY_SESSIONS_DIR="$HOME/sessions"
 export SESHY_ARCHIVE_DIR="$HOME/archive"
 
-for repository in auth-api policy-engine developer-portal; do
-  path="$HOME/src/$repository"
-  git init -q "$path"
-  git -C "$path" config user.email demo@example.invalid
-  git -C "$path" config user.name "Seshy Demo"
-  printf '# %s\n' "$repository" > "$path/README.md"
-  git -C "$path" add README.md
-  git -C "$path" commit -qm initial
-done
+clone_source() {
+  local repository="$1" revision="$2"
+  git clone --quiet "https://github.com/roshbhatia/$repository.git" "$HOME/src/$repository"
+  git -C "$HOME/src/$repository" checkout --quiet --detach "$revision"
+}
+clone_source changes 72449fa57f2813300968e042952126f9fc32e045
+clone_source ask d6bd2d4cd84aad5d677b33f229bb35124e9ca725
 
 mkdir -p "$media_root/bin"
 go build -o "$media_root/bin/sy" ./cmd/sy
 export PATH="$media_root/bin:$PATH"
-sy new auth-hardening "$HOME/src/auth-api" "$HOME/src/policy-engine" "$HOME/src/developer-portal" > /dev/null
-mkdir -p "$HOME/sessions/release-readiness/api" "$HOME/archive/incident-retro/logs"
+sy new provider-release "$HOME/src/changes" "$HOME/src/ask" > /dev/null
 
-freeze --execute "sy status auth-hardening" \
+freeze --execute "sy status provider-release" \
   --output "$output_dir/seshy.png" \
   --width 1000 \
   --padding 24 \

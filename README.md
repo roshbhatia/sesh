@@ -4,7 +4,11 @@ Minimalist session manager for multi-repo development, with git worktree integra
 
 ![Seshy session overview](docs/seshy.png)
 
-![Create, inspect, archive, and restore a session](docs/seshy.gif)
+![Inspect, archive, and restore a session](docs/seshy.gif)
+
+The recording reviews real [Changes](https://github.com/roshbhatia/changes/commit/72449fa57f2813300968e042952126f9fc32e045) and [Ask](https://github.com/roshbhatia/ask/commit/d6bd2d4cd84aad5d677b33f229bb35124e9ca725) commits in one session.
+It creates isolated worktrees, inspects release history, then archives and restores the group.
+[Recording script](hack/screenshots.sh) · [Tape](hack/seshy.tape)
 
 ## Install
 

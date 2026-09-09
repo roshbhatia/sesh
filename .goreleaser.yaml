@@ -2,7 +2,7 @@ version: 2
 
 before:
   hooks:
-    - python3 hack/release-scripts.py --version {{ .Version }} --all --include-darwin-amd64 --output .release-extras
+    - nix develop -c uv run --offline --no-managed-python --no-python-downloads --python python3 --script hack/release-scripts.py --version {{ .Version }} --all --include-darwin-amd64 --output .release-extras
     - go run ./cmd/sy generate --check
 
 builds:

@@ -244,6 +244,7 @@
         {
           default = pkgs.mkShellNoCC {
             packages = [
+              pkgs.uv
               pkgs.python3
               pkgs.ffmpeg
               pkgs.actionlint
