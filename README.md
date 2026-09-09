@@ -208,6 +208,25 @@ not a provider/v1 request is a usage error.
 
 The manifest roster discovers is share/seshy/providers/seshy.yaml.
 
+### `sy prune`
+
+sy prune [repo...] [flags]
+
+Reclaim what a removed session left in git.
+
+For each repo, prune worktree registrations whose directories are gone, then
+delete the seshy branches whose session directory no longer exists. Also
+remove symlinks under the sessions root whose targets are gone. With no repo
+arguments, prune visits every source repo of every session. A "-" argument
+reads repo paths from stdin.
+
+Each action prints one line to stderr. --dry-run prints the actions without
+taking them.
+
+| Option | Description |
+| --- | --- |
+| `--dry-run` | Print the actions without taking them |
+
 ### `sy remove`
 
 sy remove <session> <repo> [flags]

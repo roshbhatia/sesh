@@ -5,7 +5,7 @@ export def --env sy [
   if $greedy != null {
     return (^sy --greedy $greedy ...$args)
   }
-  if (($args | length) == 1) and (not ($args.0 | str starts-with "-")) and ($args.0 not-in ["__values" "add" "archive" "at" "attach" "completion" "config" "cur" "current" "delete" "generate" "help" "info" "init" "list" "ls" "new" "open" "path" "provider" "remove" "rename" "restore" "rm" "source" "status" "sw" "switch" "unarchive"]) {
+  if (($args | length) == 1) and (not ($args.0 | str starts-with "-")) and ($args.0 not-in ["__values" "add" "archive" "at" "attach" "completion" "config" "cur" "current" "delete" "generate" "help" "info" "init" "list" "ls" "new" "open" "path" "provider" "prune" "remove" "rename" "restore" "rm" "source" "status" "sw" "switch" "unarchive"]) {
     let resolved = (^sy --greedy $args.0 | complete)
     if ($resolved.exit_code == 0) and (not ($resolved.stdout | str trim | is-empty)) {
       cd ($resolved.stdout | str trim)
@@ -96,6 +96,11 @@ export extern "sy provider" [
   ...args: string@"__sy_completion_none"
 ]
 
+export extern "sy prune" [
+  --dry-run # Print the actions without taking them
+  ...args: string@"__sy_completion_none"
+]
+
 export extern "sy remove" [
   --force(-f) # Skip confirmation prompt
   ...args: string@"__sy_completion_values_9"
@@ -145,6 +150,7 @@ def "__sy_completion_values_0" [context?: string] {
     "open"
     "path"
     "provider"
+    "prune"
     "remove"
     "rename"
     "source"

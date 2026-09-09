@@ -1,5 +1,5 @@
 __sy_completion_values_0() {
-  printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive'
+  printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'prune' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive'
   'sy' '__values' 'active' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
 }
 __sy_completion_values_1() {
@@ -121,6 +121,7 @@ _sy_complete() {
       ':open') context='open' ;;
       ':path') context='path' ;;
       ':provider') context='provider' ;;
+      ':prune') context='prune' ;;
       ':remove') context='remove' ;;
       ':rename') context='rename' ;;
       ':source') context='source' ;;
@@ -137,7 +138,7 @@ _sy_complete() {
   case "$context" in
     '')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive' '--greedy'
+        printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'prune' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive' '--greedy'
         __sy_completion_values_0
       )
       ;;
@@ -219,6 +220,11 @@ _sy_complete() {
       ;;
     'provider')
       __sy_completion_filter "$current" < <(
+      )
+      ;;
+    'prune')
+      __sy_completion_filter "$current" < <(
+        printf '%s\n' '--dry-run'
       )
       ;;
     'remove')

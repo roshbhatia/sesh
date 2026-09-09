@@ -1,7 +1,7 @@
 #compdef sy
 __sy_completion_values_0() {
   local -a values
-  values=( 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive')
+  values=( 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'prune' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive')
   values+=("${(@f)$('sy' '__values' 'active' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
   compadd -a values
 }
@@ -136,6 +136,7 @@ _sy() {
       ':open') context='open' ;;
       ':path') context='path' ;;
       ':provider') context='provider' ;;
+      ':prune') context='prune' ;;
       ':remove') context='remove' ;;
       ':rename') context='rename' ;;
       ':source') context='source' ;;
@@ -243,6 +244,12 @@ _sy() {
       ;;
     'provider')
       _arguments \
+        '*:argument:'
+
+      ;;
+    'prune')
+      _arguments \
+        '--dry-run[Print the actions without taking them]' \
         '*:argument:'
 
       ;;
