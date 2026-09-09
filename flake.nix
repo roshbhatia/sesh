@@ -1,10 +1,30 @@
 {
   description = "seshy: multi-repository worktree session manager";
 
-  inputs.nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+  inputs = {
+    nixpkgs.url = "github:NixOS/nixpkgs/nixpkgs-unstable";
+    # The canonical provider/v1 contract. schema/narrow.cue adds seshy's rules
+    # on top of it for the manifest in share/seshy/providers.
+    provider-spec = {
+      url = "github:roshbhatia/provider-spec/v1.0.0";
+      flake = false;
+    };
+    # The roster release whose catalog schema schema/roster.catalog.v1.schema.json
+    # copies. The copy is what the Go tests validate "sy source list" against.
+    roster = {
+      url = "github:roshbhatia/roster/v0.1.0";
+      flake = false;
+    };
+  };
 
   outputs =
-    { self, nixpkgs, ... }:
+    {
+      self,
+      nixpkgs,
+      provider-spec,
+      roster,
+      ...
+    }:
     let
       supportedSystems = [
         "aarch64-darwin"
@@ -33,7 +53,7 @@
             pname = "seshy";
             inherit version;
             src = ./.;
-            vendorHash = "sha256-G0UDU3KpKeKk51LW1ocAXug3YoIn/SgvXnR9TqJSRbk=";
+            vendorHash = "sha256-6ABqBYoJY6AnaX4ThRhrqDBv/ky/h2nAW4R9OYThXFU=";
             subPackages = [ "./cmd/sy" ];
             nativeBuildInputs = [ pkgs.installShellFiles ];
             nativeCheckInputs = [
@@ -72,6 +92,7 @@
                 --zsh <("$out/bin/sy" completion zsh)
               mkdir -p "$out/share/nushell/vendor/autoload"
               "$out/bin/sy" completion nu > "$out/share/nushell/vendor/autoload/sy.nu"
+              install -Dm644 share/seshy/providers/seshy.yaml "$out/share/seshy/providers/seshy.yaml"
               ln -s "$out/bin/sy" "$out/bin/seshy"
             '';
             meta = {
@@ -117,6 +138,7 @@
                 test -s ${package}/share/zsh/site-functions/_sy
                 test -s ${package}/share/fish/vendor_completions.d/sy.fish
                 test -s ${package}/share/nushell/vendor/autoload/sy.nu
+                test -s ${package}/share/seshy/providers/seshy.yaml
                 ${package}/bin/sy --version | grep -F 'sy version '
                 ${package}/bin/sy init nu > "$TMPDIR/sy-init.nu"
                 cmp "$TMPDIR/sy-init.nu" ${package}/share/nushell/vendor/autoload/sy.nu
@@ -148,6 +170,30 @@
                 nu --no-config-file --no-std-lib "$TMPDIR/installed.nu"
                 touch "$out"
               '';
+          # The manifest satisfies the spec plus schema/narrow.cue, every negative
+          # fixture is rejected, and the committed catalog schema is the roster
+          # release the flake pins.
+          provider-spec-contract =
+            pkgs.runCommand "seshy-provider-spec-contract"
+              {
+                nativeBuildInputs = [
+                  pkgs.cue
+                  pkgs.diffutils
+                ];
+              }
+              ''
+                cd ${./.}
+                export HOME="$TMPDIR"
+                cue vet -d '#Manifest' ${provider-spec}/provider.cue schema/narrow.cue share/seshy/providers/seshy.yaml
+                for fixture in schema/fixtures/*.yaml; do
+                  if cue vet -d '#Manifest' ${provider-spec}/provider.cue schema/narrow.cue "$fixture" 2>/dev/null; then
+                    echo "reject expected: $fixture" >&2
+                    exit 1
+                  fi
+                done
+                diff -u ${roster}/schema/roster.catalog.v1.schema.json schema/roster.catalog.v1.schema.json
+                touch "$out"
+              '';
           media-freshness =
             pkgs.runCommand "seshy-media-freshness"
               {
@@ -176,6 +222,7 @@
               pkgs.bash
               pkgs.fish
               pkgs.charm-freeze
+              pkgs.cue
               pkgs.git
               pkgs.go
               pkgs.go-task

@@ -1,0 +1,11 @@
+# Must fail: session.open is not a source action.
+version: provider/v1
+kind: source
+name: seshy
+description: Unsupported action
+command: [sy, provider]
+actions:
+  source.list:
+    description: List
+  session.open:
+    description: Not ours

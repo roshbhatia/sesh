@@ -193,6 +193,21 @@ printed. A session that no longer exists exits 3.
 
 sy path <name>
 
+### `sy provider`
+
+sy provider
+
+Answer one provider/v1 request frame read from stdin, as roster invokes it.
+
+The frame's capability selects the answer: provider.validate reports ok,
+source.list returns the roster.catalog/v1 document, and source.open takes
+{"id": "seshy:<name>"} and returns that row with its spawn plan. The result is
+one JSON line on stdout. A capability seshy does not implement, or an id that
+names no session, is an error result, not a non-zero exit; a frame that is
+not a provider/v1 request is a usage error.
+
+The manifest roster discovers is share/seshy/providers/seshy.yaml.
+
 ### `sy remove`
 
 sy remove <session> <repo> [flags]
@@ -204,6 +219,19 @@ sy remove <session> <repo> [flags]
 ### `sy rename`
 
 sy rename <old-name> <new-name>
+
+### `sy source`
+
+sy source
+
+Serve sessions to roster, the session-source aggregator a launcher reads.
+
+"sy source list" prints the roster.catalog/v1 document directly, one row per
+active session, for inspection. roster itself talks to "sy provider".
+
+### `sy source list`
+
+sy source list
 
 ### `sy status`
 

@@ -1,7 +1,7 @@
 #compdef sy
 __sy_completion_values_0() {
   local -a values
-  values=( 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'remove' 'rename' 'status' 'switch' 'unarchive')
+  values=( 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive')
   values+=("${(@f)$('sy' '__values' 'active' "${BUFFER[1,CURSOR]}" 2>/dev/null)}")
   compadd -a values
 }
@@ -135,8 +135,11 @@ _sy() {
       ':new') context='new' ;;
       ':open') context='open' ;;
       ':path') context='path' ;;
+      ':provider') context='provider' ;;
       ':remove') context='remove' ;;
       ':rename') context='rename' ;;
+      ':source') context='source' ;;
+      'source:list') context='source list' ;;
       ':status') context='status' ;;
       ':switch') context='switch' ;;
       ':unarchive') context='unarchive' ;;
@@ -238,6 +241,11 @@ _sy() {
         '*:argument:__sy_completion_values_8'
 
       ;;
+    'provider')
+      _arguments \
+        '*:argument:'
+
+      ;;
     'remove')
       _arguments \
         '(-f)--force[Skip confirmation prompt]' \
@@ -247,6 +255,16 @@ _sy() {
     'rename')
       _arguments \
         '*:argument:__sy_completion_values_10'
+
+      ;;
+    'source')
+      _arguments \
+        '2:command:(list)'
+
+      ;;
+    'source list')
+      _arguments \
+        '*:argument:'
 
       ;;
     'status')

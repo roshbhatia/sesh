@@ -1,0 +1,9 @@
+# Must fail: a seshy manifest is kind source.
+version: provider/v1
+kind: agent
+name: seshy
+description: Wrong kind
+command: [sy, provider]
+actions:
+  source.list:
+    description: List

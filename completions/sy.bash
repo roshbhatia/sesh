@@ -1,5 +1,5 @@
 __sy_completion_values_0() {
-  printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'remove' 'rename' 'status' 'switch' 'unarchive'
+  printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive'
   'sy' '__values' 'active' "${COMP_LINE:0:COMP_POINT}" 2>/dev/null || true
 }
 __sy_completion_values_1() {
@@ -120,8 +120,11 @@ _sy_complete() {
       ':new') context='new' ;;
       ':open') context='open' ;;
       ':path') context='path' ;;
+      ':provider') context='provider' ;;
       ':remove') context='remove' ;;
       ':rename') context='rename' ;;
+      ':source') context='source' ;;
+      'source:list') context='source list' ;;
       ':status') context='status' ;;
       ':switch') context='switch' ;;
       ':unarchive') context='unarchive' ;;
@@ -134,7 +137,7 @@ _sy_complete() {
   case "$context" in
     '')
       __sy_completion_filter "$current" < <(
-        printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'remove' 'rename' 'status' 'switch' 'unarchive' '--greedy'
+        printf '%s\n' 'completion' 'add' 'archive' 'attach' 'config' 'current' 'delete' 'help' 'init' 'list' 'new' 'open' 'path' 'provider' 'remove' 'rename' 'source' 'status' 'switch' 'unarchive' '--greedy'
         __sy_completion_values_0
       )
       ;;
@@ -214,6 +217,10 @@ _sy_complete() {
         __sy_completion_values_8
       )
       ;;
+    'provider')
+      __sy_completion_filter "$current" < <(
+      )
+      ;;
     'remove')
       __sy_completion_filter "$current" < <(
         printf '%s\n' '--force' '-f'
@@ -223,6 +230,15 @@ _sy_complete() {
     'rename')
       __sy_completion_filter "$current" < <(
         __sy_completion_values_10
+      )
+      ;;
+    'source')
+      __sy_completion_filter "$current" < <(
+        printf '%s\n' 'list'
+      )
+      ;;
+    'source list')
+      __sy_completion_filter "$current" < <(
       )
       ;;
     'status')
