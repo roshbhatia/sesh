@@ -273,3 +273,33 @@ func TestGetSessionsRootDefault(t *testing.T) {
 		t.Errorf("expected %q, got %q", expected, root)
 	}
 }
+
+// TestLoadEmptyFileStillAppliesEnvironment: an empty document used to need a
+// missing-sibling trick before SESHY_* values applied. go-utils tolerates the
+// empty document itself now.
+func TestLoadEmptyFileStillAppliesEnvironment(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("SESHY_BRANCH_FORMAT", "env/{{.Session}}")
+	cfgDir := filepath.Join(dir, "seshy")
+	os.MkdirAll(cfgDir, 0755)
+	os.WriteFile(filepath.Join(cfgDir, "config.yaml"), []byte("  \n"), 0644)
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if cfg.BranchFormat != "env/{{.Session}}" {
+		t.Errorf("environment override lost on an empty file: %q", cfg.BranchFormat)
+	}
+}
+
+func TestGetSessionsRootExpandsHome(t *testing.T) {
+	dir := t.TempDir()
+	t.Setenv("XDG_CONFIG_HOME", dir)
+	t.Setenv("SESHY_SESSIONS_DIR", "~/work/sessions")
+	home, _ := os.UserHomeDir()
+	if got, want := GetSessionsRoot(), filepath.Join(home, "work", "sessions"); got != want {
+		t.Errorf("GetSessionsRoot() = %q, want %q", got, want)
+	}
+}

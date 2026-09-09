@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"strings"
 
+	"github.com/roshbhatia/go-utils/paths"
 	"github.com/roshbhatia/go-utils/terminal"
 	"github.com/roshbhatia/go-utils/ui"
 	"github.com/roshbhatia/seshy/internal/exitcode"
@@ -125,7 +126,7 @@ func prependDefaults(defaults, candidates []string) []string {
 	seen := make(map[string]bool, len(defaults))
 	result := make([]string, 0, len(defaults)+len(candidates))
 	for _, d := range defaults {
-		d = expandTilde(d)
+		d = paths.ExpandHome(d)
 		if !seen[d] {
 			seen[d] = true
 			result = append(result, d)
@@ -196,12 +197,4 @@ func completeArchivedNames(cmd *cobra.Command, args []string, toComplete string)
 	}
 	sessions, _ := session.ListArchived()
 	return sessionNames(sessions), cobra.ShellCompDirectiveNoFileComp
-}
-
-func expandTilde(path string) string {
-	if strings.HasPrefix(path, "~/") {
-		home, _ := os.UserHomeDir()
-		return home + path[1:]
-	}
-	return path
 }
